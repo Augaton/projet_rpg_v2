@@ -10,10 +10,10 @@ public:
     float getWidth() const { return width; }
     float getHeight() const { return height; }
     bool isTextureLoaded() const { return textureLoaded; }
+    Texture2D texture;
 private:
     float posX, posY;
     float width = 100;
     float height = 40;
-    Texture2D texture;
     bool textureLoaded = false;
 };

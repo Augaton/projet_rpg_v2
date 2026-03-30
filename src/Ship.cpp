@@ -6,6 +6,7 @@ Ship::Ship(float x, float y) : posX(x), posY(y) {
     // Charge la texture du Battlecruiser
     texture = LoadTexture("asset/Base/PNGs/Kla'ed - Battlecruiser - Base.png");
     if (texture.id > 0) {
+        SetTextureFilter(texture, TEXTURE_FILTER_TRILINEAR); // Teste un filtre plus doux
         textureLoaded = true;
         width = texture.width;
         height = texture.height;

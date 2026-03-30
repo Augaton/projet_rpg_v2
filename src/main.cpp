@@ -26,38 +26,40 @@ float randf() {
 }
 
 int main() {
+        // --- HUD variables fictives ---
+        int fuel = 12, missiles = 5, scrap = 23;
+        const char* nomVaisseau = "KLA'ED - BATTLECRUISER";
     srand(time(0));
+
     InitWindow(WIDTH, HEIGHT, "FTL-like avec Raylib");
+    ToggleFullscreen();
     SetTargetFPS(60);
 
     // Fond étoilé
+    int screenWidth = GetScreenWidth();
+    int screenHeight = GetScreenHeight();
     Star stars[STARS] = {0};
     for (int i = 0; i < STARS; i++) {
-        stars[i].x = GetRandomValue(0, WIDTH);
-        stars[i].y = GetRandomValue(0, HEIGHT);
+        stars[i].x = GetRandomValue(0, screenWidth);
+        stars[i].y = GetRandomValue(0, screenHeight);
         stars[i].z = randf();
     }
 
     // Création du vaisseau de base (centré comme dans FTL)
-    Ship tempShip(0, 0);
-    float shipWidth = 100;
-    float shipHeight = 40;
-    if (tempShip.isTextureLoaded()) {
-        shipWidth = tempShip.getWidth();
-        shipHeight = tempShip.getHeight();
-    }
-    float centerX = (WIDTH - shipWidth) / 2;
-    float centerY = (HEIGHT - shipHeight) / 2;
-    Ship ship(centerX, centerY);
+    // On crée le vaisseau, positionné au centre (calculé dynamiquement à chaque frame)
+    Ship ship(0, 0); // position temporaire, ignorée
 
     // Boucle principale du jeu
     while (!WindowShouldClose()) {
+        // Mettre à jour la taille de l'écran si besoin
+        screenWidth = GetScreenWidth();
+        screenHeight = GetScreenHeight();
         // Scroll des étoiles
         for (int i = 0; i < STARS; i++) {
             stars[i].x -= SCROLL_SPEED * (stars[i].z / 1);
             if (stars[i].x <= 0) {
-                stars[i].x += WIDTH;
-                stars[i].y = GetRandomValue(0, HEIGHT);
+                stars[i].x += screenWidth;
+                stars[i].y = GetRandomValue(0, screenHeight);
             }
         }
 
@@ -67,7 +69,38 @@ int main() {
         for (int i = 0; i < STARS; i++) {
             DrawPixel(stars[i].x, stars[i].y, WHITE);
         }
-        ship.Draw();
+
+        // --- HUD ---
+        // Nom du vaisseau (haut centre)
+        int nomWidth = MeasureText(nomVaisseau, 22);
+        DrawText(nomVaisseau, screenWidth/2 - nomWidth/2, 10, 22, YELLOW);
+
+        // Ressources (haut droite)
+        int resX = screenWidth - 180;
+        DrawText(TextFormat("Fuel: %d", fuel), resX, 20, 16, GREEN);
+        DrawText(TextFormat("Missiles: %d", missiles), resX, 40, 16, ORANGE);
+        DrawText(TextFormat("Scrap: %d", scrap), resX, 60, 16, GOLD);
+
+        // Vaisseau centré dynamiquement
+        // Calcul du centre pour affichage natif (pas de scale)
+        // Après rotation de 90°, la largeur et la hauteur sont inversées
+        float destW = ship.getHeight();
+        float destH = ship.getWidth();
+        float shipX = screenWidth / 2.0f;
+        float shipY = screenHeight / 2.0f;
+        if (ship.isTextureLoaded()) {
+            DrawTexturePro(
+                ship.texture,
+                (Rectangle){0, 0, ship.getWidth(), ship.getHeight()},
+                (Rectangle){shipX, shipY, destW, destH},
+                (Vector2){destW/2.0f, destH/2.0f},
+                90.0f,
+                WHITE
+            );
+        } else {
+            DrawRectangle(shipX - destW/2.0f, shipY - destH/2.0f, destW, destH, BLUE);
+        }
+
         EndDrawing();
     }
 
