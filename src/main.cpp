@@ -55,14 +55,14 @@ int main() {
     }
 
     // Chargement des assets
-    Ship ship(0, 0, "asset/Base/Aseprite/Kla'ed - Battlecruiser - Base.aseprite");
-    Aseprite engineSprite = LoadAseprite("asset/Engine/Aseprite/Kla'ed - Battlecruiser - Engine.aseprite");
-    Texture2D shieldTex = LoadTexture("asset/Shield/Aseprite/Kla'ed - Battlecruiser - Shield.png");
+    Ship ship(0, 0, "asset/Base/Aseprite/frigate.aseprite");
+    Texture2D engineTex = LoadTexture("asset/Engine/PNGs/frigate.png");
+    Texture2D shieldTex = LoadTexture("asset/Shield/PNGs/frigate.png");
 
     if (!IsAsepriteValid(ship.GetSprite())) {
         TraceLog(LOG_ERROR, "ERREUR : Fichier vaisseau introuvable ! Vérifie le chemin.");
     }
-    if (!IsAsepriteValid(engineSprite)) {
+    if (engineTex.id == 0) {
         TraceLog(LOG_ERROR, "ERREUR : Fichier moteur introuvable !");
     }
     if (shieldTex.id == 0) {
@@ -114,36 +114,75 @@ int main() {
             shipH = (float)GetAsepriteHeight(sSprite);
         }
 
-        // --- MOTEUR ---
-        if (IsAsepriteValid(engineSprite)) {
-            int frameIdx = (int)(t * 12.0f) % 12; // 12 frames
-            float eW = (float)GetAsepriteWidth(engineSprite);
-            float eH = (float)GetAsepriteHeight(engineSprite);
-            // On décale le moteur légèrement vers l'arrière
-            Vector2 ePos = { shipX, shipY }; 
+        // --- MOTEUR (Système Texture2D) ---
+        if (engineTex.id > 0) {
+            int totalEngineFrames = 12;
+            float engineAnimSpeed = 12.0f; 
+            int engineFrameIdx = (int)(t * engineAnimSpeed) % totalEngineFrames;
 
+            float eFrameW = (float)engineTex.width / totalEngineFrames;
+            float eFrameH = (float)engineTex.height;
+
+            Rectangle eSourceRec = { engineFrameIdx * eFrameW, 0, eFrameW, eFrameH };
+            Vector2 ePos = { shipX, shipY };
+            Vector2 eOrigin = { eFrameW / 2.0f, eFrameH / 2.0f };
+
+            // Effet FTL (Bloom)
             if (ftlActive) {
                 for (int b = 3; b >= 1; b--) {
                     float bloomScale = 1.0f + b * 0.2f;
                     Color bloomColor = ColorAlpha(SKYBLUE, 0.15f * b);
-                    DrawAsepritePro(engineSprite, frameIdx, {ePos.x, ePos.y, eW * bloomScale, eH * bloomScale}, { (eW*bloomScale)/2, (eH*bloomScale)/2 }, 90.0f, bloomColor);
+                    
+                    DrawTexturePro(
+                        engineTex,
+                        eSourceRec,
+                        { ePos.x, ePos.y, eFrameW * bloomScale, eFrameH * bloomScale },
+                        { (eFrameW * bloomScale) / 2.0f, (eFrameH * bloomScale) / 2.0f },
+                        90.0f,
+                        bloomColor
+                    );
                 }
             }
-            DrawAsepritePro(engineSprite, frameIdx, {ePos.x, ePos.y, eW, eH}, {eW/2, eH/2}, 90.0f, WHITE);
+
+            // Moteur principal
+            DrawTexturePro(
+                engineTex,
+                eSourceRec,
+                { ePos.x, ePos.y, eFrameW, eFrameH },
+                eOrigin,
+                90.0f,
+                WHITE
+            );
         }
 
-        // --- SHIELD ---
+        // --- SHIELD (Système Texture2D animé) ---
         if (shieldTex.id > 0) {
-            float shieldW = shieldTex.width / 16.0f;
-            float shieldH = shieldTex.height;
+            int totalFrames = 40;
+            float animSpeed = 12.0f; // Vitesse : 12 images par seconde
+            
+
+            int currentFrame = (int)(t * animSpeed) % totalFrames;
+            float frameWidth = (float)shieldTex.width / totalFrames;
+            float frameHeight = (float)shieldTex.height;
+
+            Rectangle sourceRec = { 
+                currentFrame * frameWidth, 
+                0, 
+                frameWidth, 
+                frameHeight 
+            };
+
+            Rectangle destRec = { shipX, shipY, frameWidth, frameHeight };
+            Vector2 origin = { frameWidth / 2.0f, frameHeight / 2.0f };
+            Color shieldColor = { 100, 200, 255, (unsigned char)(180 + sinf(t * 4.0f) * 20) };
 
             DrawTexturePro(
                 shieldTex,
-                (Rectangle){0, 0, shieldW, shieldH},
-                (Rectangle){shipX, shipY, shieldW, shieldH},
-                (Vector2){shieldW/2.0f, shieldH/2.0f},
+                sourceRec,
+                destRec,
+                origin,
                 90.0f,
-                (Color){100,200,255,120}
+                shieldColor
             );
         }
 
@@ -156,7 +195,7 @@ int main() {
         EndDrawing();
     }
 
-    UnloadAseprite(engineSprite);
+    UnloadTexture(engineTex);
     UnloadTexture(shieldTex);
 
     ship.Unload();
