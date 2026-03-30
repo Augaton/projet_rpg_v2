@@ -33,6 +33,7 @@ Prototype game
 
 typedef struct {
     float x, y, z;
+    Color color; // On stocke la couleur pour varier la luminosité
 } Star;
 
 float randf() {
@@ -46,12 +47,23 @@ int main() {
     ToggleFullscreen(); // Optionnel selon tes préférences de test
     SetTargetFPS(60);
 
-    // Fond étoilé
     Star stars[STARS] = {0};
     for (int i = 0; i < STARS; i++) {
         stars[i].x = (float)GetRandomValue(0, GetScreenWidth());
         stars[i].y = (float)GetRandomValue(0, GetScreenHeight());
-        stars[i].z = randf();
+        
+        // z : profondeur (0.1 = très loin, 1.0 = proche)
+        stars[i].z = 0.1f + randf() * 0.9f; 
+
+        // Luminosité réduite (max 180 au lieu de 255) pour plus de discrétion
+        unsigned char brightness = (unsigned char)(stars[i].z * 180);
+        
+        // Légère teinte bleutée aléatoire pour le réalisme
+        if (GetRandomValue(0, 10) > 8) {
+            stars[i].color = (Color){ brightness, (unsigned char)(brightness * 0.9f), 255, 255 };
+        } else {
+            stars[i].color = (Color){ brightness, brightness, brightness, 255 };
+        }
     }
 
     // Chargement des assets
@@ -91,11 +103,13 @@ int main() {
         float shipH = 128.0f;
 
         bool ftlActive = IsKeyDown(KEY_SPACE);
-        float starSpeed = ftlActive ? SCROLL_SPEED * 15.0f : SCROLL_SPEED;
+        float baseSpeed = ftlActive ? SCROLL_SPEED * 20.0f : SCROLL_SPEED;
 
-        // Scroll des étoiles
         for (int i = 0; i < STARS; i++) {
-            stars[i].x -= starSpeed * (stars[i].z + 0.1f) * 100.0f * dt;
+            // La vitesse est multipliée par z : les étoiles devant (z=1) vont plus vite
+            stars[i].x -= baseSpeed * stars[i].z * 100.0f * dt;
+
+            // Si ftlActive, on peut ajouter un effet d'étirement (streak)
             if (stars[i].x <= 0) {
                 stars[i].x += (float)screenWidth;
                 stars[i].y = (float)GetRandomValue(0, screenHeight);
@@ -128,19 +142,25 @@ int main() {
             Vector2 eOrigin = { eFrameW / 2.0f, eFrameH / 2.0f };
 
             // Effet FTL (Bloom)
-            if (ftlActive) {
-                for (int b = 3; b >= 1; b--) {
-                    float bloomScale = 1.0f + b * 0.2f;
-                    Color bloomColor = ColorAlpha(SKYBLUE, 0.15f * b);
-                    
-                    DrawTexturePro(
-                        engineTex,
-                        eSourceRec,
-                        { ePos.x, ePos.y, eFrameW * bloomScale, eFrameH * bloomScale },
-                        { (eFrameW * bloomScale) / 2.0f, (eFrameH * bloomScale) / 2.0f },
-                        90.0f,
-                        bloomColor
+            for (int i = 0; i < STARS; i++) {
+                if (ftlActive) {
+                    // Traînée FTL plus fine et plus sombre
+                    float streakLength = 8.0f * stars[i].z; 
+                    DrawLineEx(
+                        { stars[i].x, stars[i].y },
+                        { stars[i].x + streakLength, stars[i].y },
+                        0.5f + (stars[i].z * 1.0f), // Plus fin
+                        ColorAlpha(stars[i].color, 0.5f + stars[i].z * 0.5f) // Plus transparent
                     );
+                } else {
+                    // Étoile normale : on dessine un pixel ou un tout petit point
+                    if (stars[i].z < 0.5f) {
+                        // Très loin : un simple pixel
+                        DrawPixelV({ stars[i].x, stars[i].y }, stars[i].color);
+                    } else {
+                        // Plus proche : un petit point de taille 1
+                        DrawCircleV({ stars[i].x, stars[i].y }, 1.0f, stars[i].color);
+                    }
                 }
             }
 
