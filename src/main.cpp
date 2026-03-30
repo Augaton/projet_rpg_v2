@@ -27,9 +27,6 @@ float randf() {
 }
 
 int main() {
-        // --- HUD variables fictives ---
-        int fuel = 12, missiles = 5, scrap = 23;
-        const char* nomVaisseau = "KLA'ED - BATTLECRUISER";
     srand(time(0));
 
     InitWindow(WIDTH, HEIGHT, "FTL-like avec Raylib");
@@ -47,8 +44,9 @@ int main() {
     }
 
     // Création du vaisseau de base (centré comme dans FTL)
-    // On crée le vaisseau, positionné au centre (calculé dynamiquement à chaque frame)
     Ship ship(0, 0); // position temporaire, ignorée
+    // Charge la texture moteur (engine)
+    Texture2D engineTex = LoadTexture("asset/Engine/PNGs/Kla'ed - Battlecruiser - Engine.png");
 
     // Boucle principale du jeu
     float t = 0.0f;
@@ -71,18 +69,7 @@ int main() {
         for (int i = 0; i < STARS; i++) {
             DrawPixel(stars[i].x, stars[i].y, WHITE);
         }
-
-        // --- HUD ---
-        // Nom du vaisseau (haut centre)
-        int nomWidth = MeasureText(nomVaisseau, 22);
-        DrawText(nomVaisseau, screenWidth/2 - nomWidth/2, 10, 22, YELLOW);
-
-        // Ressources (haut droite)
-        int resX = screenWidth - 180;
-        DrawText(TextFormat("Fuel: %d", fuel), resX, 20, 16, GREEN);
-        DrawText(TextFormat("Missiles: %d", missiles), resX, 40, 16, ORANGE);
-        DrawText(TextFormat("Scrap: %d", scrap), resX, 60, 16, GOLD);
-
+        
         // Oscillation verticale (lerp sinus)
         t += GetFrameTime();
         float lerpOffset = sin(t * 1.0f) * 20.0f; // amplitude 20px, vitesse modérée
@@ -90,6 +77,33 @@ int main() {
         float destH = ship.getWidth();
         float shipX = screenWidth / 2.0f;
         float shipY = screenHeight / 2.0f + lerpOffset;
+        // Effet moteur animé (sous le vaisseau)
+        if (ship.isTextureLoaded() && engineTex.id > 0) {
+            // Spritesheet moteur : 12 frames horizontales
+            const int engineFrames = 12;
+            int frameW = engineTex.width / engineFrames;
+            int frameH = engineTex.height;
+            int frameIdx = ((int)(t * 6.0f)) % engineFrames; // 18 fps
+            Rectangle srcRect = { (float)(frameW * frameIdx), 0.0f, (float)frameW, (float)frameH };
+            // Animation moteur : variation alpha et taille
+            float engineAlpha = 0.7f + 0.3f;
+            float engineScale = 1.0f + 0.1f;
+            float engineW = frameW * engineScale;
+            float engineH = frameH * engineScale;
+            float engineX = shipX + 3.9f;
+            float engineY = shipY;
+            Color engineColor = WHITE;
+            engineColor.a = (unsigned char)(engineAlpha * 255);
+            DrawTexturePro(
+                engineTex,
+                srcRect,
+                (Rectangle){engineX, engineY, engineW, engineH},
+                (Vector2){engineW/2.0f, engineH/2.0f},
+                90.0f,
+                engineColor
+            );
+        }
+        // Vaisseau
         if (ship.isTextureLoaded()) {
             DrawTexturePro(
                 ship.texture,
@@ -106,6 +120,7 @@ int main() {
         EndDrawing();
     }
 
+    UnloadTexture(engineTex);
     CloseWindow();
     return 0;
 }
