@@ -1,5 +1,5 @@
 // main.cpp - Point d'entrée du jeu FTL-like avec Raylib
-// Auteur : Votre nom
+// Auteur : Augaton
 // Date : 2026
 // Ce fichier initialise une fenêtre Raylib et affiche un écran de base.
 
@@ -50,13 +50,18 @@ int main() {
 
     // Boucle principale du jeu
     float t = 0.0f;
+    bool ftlActive = false;
     while (!WindowShouldClose()) {
         // Mettre à jour la taille de l'écran si besoin
         screenWidth = GetScreenWidth();
         screenHeight = GetScreenHeight();
+        // Activation FTL avec espace
+        ftlActive = IsKeyDown(KEY_SPACE);
+        float starSpeed = SCROLL_SPEED;
+        if (ftlActive) starSpeed *= 6.0f; // FTL : étoiles beaucoup plus rapides
         // Scroll des étoiles
         for (int i = 0; i < STARS; i++) {
-            stars[i].x -= SCROLL_SPEED * (stars[i].z / 1);
+            stars[i].x -= starSpeed * (stars[i].z / 1);
             if (stars[i].x <= 0) {
                 stars[i].x += screenWidth;
                 stars[i].y = GetRandomValue(0, screenHeight);
@@ -85,15 +90,32 @@ int main() {
             int frameH = engineTex.height;
             int frameIdx = ((int)(t * 6.0f)) % engineFrames; // 18 fps
             Rectangle srcRect = { (float)(frameW * frameIdx), 0.0f, (float)frameW, (float)frameH };
-            // Animation moteur : variation alpha et taille
-            float engineAlpha = 0.7f + 0.3f;
-            float engineScale = 1.0f + 0.1f;
+            float engineAlpha = ftlActive ? 1.0f : 0.7f + 0.3f;
+            float engineScale = 1.0f + 0.1f; // plus de scale FTL
             float engineW = frameW * engineScale;
             float engineH = frameH * engineScale;
             float engineX = shipX + 3.9f;
             float engineY = shipY;
             Color engineColor = WHITE;
             engineColor.a = (unsigned char)(engineAlpha * 255);
+            // Effet bloom/flou moteur en FTL : on dessine plusieurs fois avec alpha réduit et taille croissante
+            if (ftlActive) {
+                for (int b = 3; b >= 1; b--) {
+                    float bloomScale = 1.0f + b * 0.25f;
+                    float bloomAlpha = 0.10f * b;
+                    Color bloomColor = engineColor;
+                    bloomColor.a = (unsigned char)(bloomAlpha * 255);
+                    DrawTexturePro(
+                        engineTex,
+                        srcRect,
+                        (Rectangle){engineX, engineY, frameW * bloomScale, frameH * bloomScale},
+                        (Vector2){(frameW * bloomScale)/2.0f, (frameH * bloomScale)/2.0f},
+                        90.0f,
+                        bloomColor
+                    );
+                }
+            }
+            // Moteur principal (toujours net)
             DrawTexturePro(
                 engineTex,
                 srcRect,
