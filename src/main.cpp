@@ -9,13 +9,14 @@
 #include "Ship.hpp"
 #include <stdlib.h>
 #include <time.h>
+#include <math.h>
 
 
 
 #define WIDTH 800
 #define HEIGHT 600
 #define STARS 200
-#define SCROLL_SPEED 3
+#define SCROLL_SPEED 2
 
 typedef struct {
     float x, y, z;
@@ -50,6 +51,7 @@ int main() {
     Ship ship(0, 0); // position temporaire, ignorée
 
     // Boucle principale du jeu
+    float t = 0.0f;
     while (!WindowShouldClose()) {
         // Mettre à jour la taille de l'écran si besoin
         screenWidth = GetScreenWidth();
@@ -81,13 +83,13 @@ int main() {
         DrawText(TextFormat("Missiles: %d", missiles), resX, 40, 16, ORANGE);
         DrawText(TextFormat("Scrap: %d", scrap), resX, 60, 16, GOLD);
 
-        // Vaisseau centré dynamiquement
-        // Calcul du centre pour affichage natif (pas de scale)
-        // Après rotation de 90°, la largeur et la hauteur sont inversées
+        // Oscillation verticale (lerp sinus)
+        t += GetFrameTime();
+        float lerpOffset = sin(t * 1.0f) * 20.0f; // amplitude 20px, vitesse modérée
         float destW = ship.getHeight();
         float destH = ship.getWidth();
         float shipX = screenWidth / 2.0f;
-        float shipY = screenHeight / 2.0f;
+        float shipY = screenHeight / 2.0f + lerpOffset;
         if (ship.isTextureLoaded()) {
             DrawTexturePro(
                 ship.texture,

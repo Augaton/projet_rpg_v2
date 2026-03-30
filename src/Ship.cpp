@@ -4,12 +4,16 @@
 
 Ship::Ship(float x, float y) : posX(x), posY(y) {
     // Charge la texture du Battlecruiser
-    texture = LoadTexture("asset/Base/PNGs/Kla'ed - Battlecruiser - Base.png");
-    if (texture.id > 0) {
-        SetTextureFilter(texture, TEXTURE_FILTER_TRILINEAR); // Teste un filtre plus doux
-        textureLoaded = true;
-        width = texture.width;
-        height = texture.height;
+    Image img = LoadImage("asset/Base/PNGs/Kla'ed - Battlecruiser - Base.png");
+    if (img.data) {
+        texture = LoadTextureFromImage(img);
+        UnloadImage(img);
+        if (texture.id > 0) {
+            SetTextureFilter(texture, TEXTURE_FILTER_BILINEAR);
+            textureLoaded = true;
+            width = texture.width;
+            height = texture.height;
+        }
     }
 }
 
