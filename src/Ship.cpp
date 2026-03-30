@@ -1,40 +1,45 @@
 // Ship.cpp - Implémentation de la classe Ship
 #include "Ship.hpp"
+#include "raylib.h"
+#include "lib/raylib-aseprite.h"
 
 
-Ship::Ship(float x, float y) : posX(x), posY(y) {
-    // Charge la texture du Battlecruiser
-    Image img = LoadImage("asset/Base/PNGs/Kla'ed - Battlecruiser - Base.png");
-    if (img.data) {
-        texture = LoadTextureFromImage(img);
-        UnloadImage(img);
-        if (texture.id > 0) {
-            SetTextureFilter(texture, TEXTURE_FILTER_BILINEAR);
-            textureLoaded = true;
-            width = texture.width;
-            height = texture.height;
-        }
+Ship::Ship(float x, float y, const char* fileName) : posX(x), posY(y) {
+    // On charge directement le fichier .aseprite
+    sprite = LoadAseprite(fileName);
+    
+    if (IsAsepriteValid(sprite)) {
+        textureLoaded = true;
     }
 }
 
 Ship::~Ship() {
-    if (textureLoaded) UnloadTexture(texture);
+    Unload();
+}
+
+void Ship::Unload() {
+    if (IsAsepriteValid(sprite)) {
+        UnloadAseprite(sprite);
+    }
 }
 
 void Ship::Draw() const {
     if (textureLoaded) {
-        // Pivot de 90° vers la droite (sens horaire)
-        Vector2 center = {width / 2.0f, height / 2.0f};
-        DrawTexturePro(
-            texture,
-            (Rectangle){0, 0, (float)width, (float)height},
-            (Rectangle){posX + width / 2.0f, posY + height / 2.0f, (float)height, (float)width},
-            center,
-            90.0f,
-            WHITE
-        );
+        // Dimensions du sprite
+        float w = (float)GetAsepriteWidth(sprite);
+        float h = (float)GetAsepriteHeight(sprite);
+
+        // Destination : là où on dessine (centré sur posX, posY)
+        Rectangle dest = { posX, posY, w, h };
+        
+        // Origine : le centre du sprite pour la rotation à 90°
+        Vector2 origin = { w / 2.0f, h / 2.0f };
+
+        // On utilise la fonction de dessin spécifique à Aseprite
+        // Frame 0 par défaut pour le vaisseau de base
+        DrawAsepritePro(sprite, 0, dest, origin, 90.0f, WHITE);
     } else {
-        // Fallback : rectangle simple
-        DrawRectangle(posX, posY, width, height, BLUE);
+        // Fallback si le fichier est manquant
+        DrawRectangle(posX - 20, posY - 20, 40, 40, BLUE);
     }
 }

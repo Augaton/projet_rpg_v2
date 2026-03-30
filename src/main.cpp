@@ -1,17 +1,30 @@
-// main.cpp - Point d'entrée du jeu FTL-like avec Raylib
-// Auteur : Augaton
-// Date : 2026
-// Ce fichier initialise une fenêtre Raylib et affiche un écran de base.
+/*
+   █████████                                  █████                       
+  ███░░░░░███                                ░░███                        
+ ░███    ░███  █████ ████  ███████  ██████   ███████    ██████  ████████  
+ ░███████████ ░░███ ░███  ███░░███ ░░░░░███ ░░░███░    ███░░███░░███░░███ 
+ ░███░░░░░███  ░███ ░███ ░███ ░███  ███████   ░███    ░███ ░███ ░███ ░███ 
+ ░███    ░███  ░███ ░███ ░███ ░███ ███░░███   ░███ ███░███ ░███ ░███ ░███ 
+ █████   █████ ░░████████░░███████░░████████  ░░█████ ░░██████  ████ █████
+░░░░░   ░░░░░   ░░░░░░░░  ░░░░░███ ░░░░░░░░    ░░░░░   ░░░░░░  ░░░░ ░░░░░ 
+                          ███ ░███                                        
+                         ░░██████                                         
+                          ░░░░░░                                          
 
+Prototype game
+*/                                      
 
 
 #include "raylib.h"
+
+#define RAYLIB_ASEPRITE_IMPLEMENTATION
+#include "lib/raylib-aseprite.h"
+
 #include "Ship.hpp"
 #include <stdlib.h>
 #include <time.h>
 #include <math.h>
-
-
+#include <vector>
 
 #define WIDTH 800
 #define HEIGHT 600
@@ -30,119 +43,124 @@ int main() {
     srand(time(0));
 
     InitWindow(WIDTH, HEIGHT, "FTL-like avec Raylib");
-    ToggleFullscreen();
+    ToggleFullscreen(); // Optionnel selon tes préférences de test
     SetTargetFPS(60);
 
     // Fond étoilé
-    int screenWidth = GetScreenWidth();
-    int screenHeight = GetScreenHeight();
     Star stars[STARS] = {0};
     for (int i = 0; i < STARS; i++) {
-        stars[i].x = GetRandomValue(0, screenWidth);
-        stars[i].y = GetRandomValue(0, screenHeight);
+        stars[i].x = (float)GetRandomValue(0, GetScreenWidth());
+        stars[i].y = (float)GetRandomValue(0, GetScreenHeight());
         stars[i].z = randf();
     }
 
-    // Création du vaisseau de base (centré comme dans FTL)
-    Ship ship(0, 0); // position temporaire, ignorée
-    // Charge la texture moteur (engine)
-    Texture2D engineTex = LoadTexture("asset/Engine/PNGs/Kla'ed - Battlecruiser - Engine.png");
+    // Chargement des assets
+    Ship ship(0, 0, "asset/Base/Aseprite/Kla'ed - Battlecruiser - Base.aseprite");
+    Aseprite engineSprite = LoadAseprite("asset/Engine/Aseprite/Kla'ed - Battlecruiser - Engine.aseprite");
+    Texture2D shieldTex = LoadTexture("asset/Shield/Aseprite/Kla'ed - Battlecruiser - Shield.png");
 
-    // Boucle principale du jeu
+    if (!IsAsepriteValid(ship.GetSprite())) {
+        TraceLog(LOG_ERROR, "ERREUR : Fichier vaisseau introuvable ! Vérifie le chemin.");
+    }
+    if (!IsAsepriteValid(engineSprite)) {
+        TraceLog(LOG_ERROR, "ERREUR : Fichier moteur introuvable !");
+    }
+    if (shieldTex.id == 0) {
+        TraceLog(LOG_ERROR, "ERREUR : Fichier bouclier introuvable !");
+    }
+
     float t = 0.0f;
-    bool ftlActive = false;
+
     while (!WindowShouldClose()) {
-        // Mettre à jour la taille de l'écran si besoin
-        screenWidth = GetScreenWidth();
-        screenHeight = GetScreenHeight();
-        // Activation FTL avec espace
-        ftlActive = IsKeyDown(KEY_SPACE);
-        float starSpeed = SCROLL_SPEED;
-        if (ftlActive) starSpeed *= 6.0f; // FTL : étoiles beaucoup plus rapides
+        float dt = GetFrameTime();
+        t += dt;
+
+        int screenWidth = GetScreenWidth();
+        int screenHeight = GetScreenHeight();
+
+        // Si pour une raison X ou Y la fenêtre n'est pas encore prête
+        if (screenWidth < 10) screenWidth = WIDTH;
+        if (screenHeight < 10) screenHeight = HEIGHT;
+
+        float shipX = screenWidth / 2.0f;
+        float shipY = screenHeight / 2.0f + sinf(t * 1.5f) * 15.0f;
+
+        // On récupère le sprite du vaisseau proprement
+        const Aseprite& sSprite = ship.GetSprite();
+        float shipW = 128.0f; // Valeur par défaut (vue dans tes logs)
+        float shipH = 128.0f;
+
+        bool ftlActive = IsKeyDown(KEY_SPACE);
+        float starSpeed = ftlActive ? SCROLL_SPEED * 15.0f : SCROLL_SPEED;
+
         // Scroll des étoiles
         for (int i = 0; i < STARS; i++) {
-            stars[i].x -= starSpeed * (stars[i].z / 1);
+            stars[i].x -= starSpeed * (stars[i].z + 0.1f) * 100.0f * dt;
             if (stars[i].x <= 0) {
-                stars[i].x += screenWidth;
-                stars[i].y = GetRandomValue(0, screenHeight);
+                stars[i].x += (float)screenWidth;
+                stars[i].y = (float)GetRandomValue(0, screenHeight);
             }
         }
 
         BeginDrawing();
-        ClearBackground((Color){0, 0, 0, 255});
-        // Dessin des étoiles
+        ClearBackground(BLACK);
+
         for (int i = 0; i < STARS; i++) {
-            DrawPixel(stars[i].x, stars[i].y, WHITE);
-        }
-        
-        // Oscillation verticale (lerp sinus)
-        t += GetFrameTime();
-        float lerpOffset = sin(t * 1.0f) * 20.0f; // amplitude 20px, vitesse modérée
-        float destW = ship.getHeight();
-        float destH = ship.getWidth();
-        float shipX = screenWidth / 2.0f;
-        float shipY = screenHeight / 2.0f + lerpOffset;
-        // Effet moteur animé (sous le vaisseau)
-        if (ship.isTextureLoaded() && engineTex.id > 0) {
-            // Spritesheet moteur : 12 frames horizontales
-            const int engineFrames = 12;
-            int frameW = engineTex.width / engineFrames;
-            int frameH = engineTex.height;
-            int frameIdx = ((int)(t * 6.0f)) % engineFrames; // 18 fps
-            Rectangle srcRect = { (float)(frameW * frameIdx), 0.0f, (float)frameW, (float)frameH };
-            float engineAlpha = ftlActive ? 1.0f : 0.7f + 0.3f;
-            float engineScale = 1.0f + 0.1f; // plus de scale FTL
-            float engineW = frameW * engineScale;
-            float engineH = frameH * engineScale;
-            float engineX = shipX + 3.9f;
-            float engineY = shipY;
-            Color engineColor = WHITE;
-            engineColor.a = (unsigned char)(engineAlpha * 255);
-            // Effet bloom/flou moteur en FTL : on dessine plusieurs fois avec alpha réduit et taille croissante
-            if (ftlActive) {
-                for (int b = 3; b >= 1; b--) {
-                    float bloomScale = 1.0f + b * 0.25f;
-                    float bloomAlpha = 0.10f * b;
-                    Color bloomColor = engineColor;
-                    bloomColor.a = (unsigned char)(bloomAlpha * 255);
-                    DrawTexturePro(
-                        engineTex,
-                        srcRect,
-                        (Rectangle){engineX, engineY, frameW * bloomScale, frameH * bloomScale},
-                        (Vector2){(frameW * bloomScale)/2.0f, (frameH * bloomScale)/2.0f},
-                        90.0f,
-                        bloomColor
-                    );
-                }
-            }
-            // Moteur principal (toujours net)
-            DrawTexturePro(
-                engineTex,
-                srcRect,
-                (Rectangle){engineX, engineY, engineW, engineH},
-                (Vector2){engineW/2.0f, engineH/2.0f},
-                90.0f,
-                engineColor
-            );
-        }
-        // Vaisseau
-        if (ship.isTextureLoaded()) {
-            DrawTexturePro(
-                ship.texture,
-                (Rectangle){0, 0, ship.getWidth(), ship.getHeight()},
-                (Rectangle){shipX, shipY, destW, destH},
-                (Vector2){destW/2.0f, destH/2.0f},
-                90.0f,
-                WHITE
-            );
-        } else {
-            DrawRectangle(shipX - destW/2.0f, shipY - destH/2.0f, destW, destH, BLUE);
+            DrawPixel((int)stars[i].x, (int)stars[i].y, WHITE);
         }
 
+        if (IsAsepriteValid(sSprite)) {
+            shipW = (float)GetAsepriteWidth(sSprite);
+            shipH = (float)GetAsepriteHeight(sSprite);
+        }
+
+        // --- MOTEUR ---
+        if (IsAsepriteValid(engineSprite)) {
+            int frameIdx = (int)(t * 12.0f) % 12; // 12 frames
+            float eW = (float)GetAsepriteWidth(engineSprite);
+            float eH = (float)GetAsepriteHeight(engineSprite);
+            // On décale le moteur légèrement vers l'arrière
+            Vector2 ePos = { shipX, shipY }; 
+
+            if (ftlActive) {
+                for (int b = 3; b >= 1; b--) {
+                    float bloomScale = 1.0f + b * 0.2f;
+                    Color bloomColor = ColorAlpha(SKYBLUE, 0.15f * b);
+                    DrawAsepritePro(engineSprite, frameIdx, {ePos.x, ePos.y, eW * bloomScale, eH * bloomScale}, { (eW*bloomScale)/2, (eH*bloomScale)/2 }, 90.0f, bloomColor);
+                }
+            }
+            DrawAsepritePro(engineSprite, frameIdx, {ePos.x, ePos.y, eW, eH}, {eW/2, eH/2}, 90.0f, WHITE);
+        }
+
+        // --- SHIELD ---
+        if (shieldTex.id > 0) {
+            float shieldW = shieldTex.width / 16.0f;
+            float shieldH = shieldTex.height;
+
+            DrawTexturePro(
+                shieldTex,
+                (Rectangle){0, 0, shieldW, shieldH},
+                (Rectangle){shipX, shipY, shieldW, shieldH},
+                (Vector2){shieldW/2.0f, shieldH/2.0f},
+                90.0f,
+                (Color){100,200,255,120}
+            );
+        }
+
+        // --- VAISSEAU ---
+        if (IsAsepriteValid(sSprite)) {
+            DrawAsepritePro(sSprite, 0, { shipX, shipY, shipW, shipH }, { shipW/2, shipH/2 }, 90.0f, WHITE);
+        }
+
+        DrawText("ESPACE: Saut FTL", 20, 20, 20, RAYWHITE);
         EndDrawing();
     }
 
-    UnloadTexture(engineTex);
+    UnloadAseprite(engineSprite);
+    UnloadTexture(shieldTex);
+
+    ship.Unload();
+
     CloseWindow();
     return 0;
 }

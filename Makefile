@@ -15,7 +15,7 @@ all: $(BIN)
 
 $(BIN): $(OBJ)
 	@mkdir -p bin
-	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS)
+	$(CXX) $(CXXFLAGS) src/lib/raylib-aseprite.h src/lib/cute_aseprite.h -o $@ $^ $(LDFLAGS)
 	rm -f $(OBJ)
 
 src/%.o: src/%.cpp
