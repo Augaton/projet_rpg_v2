@@ -67,8 +67,6 @@ int main() {
         for (int i = 0; i < STARS; i++) {
             DrawPixel(stars[i].x, stars[i].y, WHITE);
         }
-        // Texte et vaisseau
-        DrawText("Bienvenue dans votre jeu FTL-like !", 180, 20, 20, DARKGRAY);
         ship.Draw();
         EndDrawing();
     }
