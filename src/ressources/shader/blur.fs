@@ -1,36 +1,32 @@
 #version 330
 
-// Input vertex attributes (from vertex shader)
 in vec2 fragTexCoord;
 in vec4 fragColor;
 
-// Input uniform values
 uniform sampler2D texture0;
 uniform vec4 colDiffuse;
-
-// Output fragment color
-out vec4 finalColor;
-
-// NOTE: Add here your custom variables
 uniform vec2 renderSize;
+
+out vec4 finalColor;
 
 void main()
 {
-    // Texel size
-    vec2 texelSize = vec2(1.0/renderSize.x, 1.0/renderSize.y);
+    // Sécurité : si renderSize est 0, on prend une valeur par défaut pour éviter le crash
+    vec2 res = (renderSize.x <= 0.0) ? vec2(800.0, 600.0) : renderSize;
+    vec2 texelSize = 1.0 / res;
     
+    // On utilise un décalage de 0.5 texel pour être SUR de lire au centre des pixels
+    // C'est ce qui supprime les lignes verticales/horizontales parasites
+    vec2 uv = fragTexCoord;
+
     vec4 sum = vec4(0.0);
     
-    // Simple 3x3 kernel blur
-    sum += texture(texture0, fragTexCoord + vec2(-1.0, -1.0) * texelSize);
-    sum += texture(texture0, fragTexCoord + vec2( 0.0, -1.0) * texelSize);
-    sum += texture(texture0, fragTexCoord + vec2( 1.0, -1.0) * texelSize);
-    sum += texture(texture0, fragTexCoord + vec2(-1.0,  0.0) * texelSize);
-    sum += texture(texture0, fragTexCoord + vec2( 0.0,  0.0) * texelSize); // Center
-    sum += texture(texture0, fragTexCoord + vec2( 1.0,  0.0) * texelSize);
-    sum += texture(texture0, fragTexCoord + vec2(-1.0,  1.0) * texelSize);
-    sum += texture(texture0, fragTexCoord + vec2( 0.0,  1.0) * texelSize);
-    sum += texture(texture0, fragTexCoord + vec2( 1.0,  1.0) * texelSize);
+    // Échantillonnage en "X" (plus stable sur Intel que le carré 3x3)
+    sum += texture(texture0, uv) * 0.4;
+    sum += texture(texture0, uv + vec2(texelSize.x, texelSize.y)) * 0.15;
+    sum += texture(texture0, uv - vec2(texelSize.x, texelSize.y)) * 0.15;
+    sum += texture(texture0, uv + vec2(texelSize.x, -texelSize.y)) * 0.15;
+    sum += texture(texture0, uv - vec2(texelSize.x, -texelSize.y)) * 0.15;
     
-    finalColor = (sum / 9.0) * fragColor * colDiffuse;
+    finalColor = sum * fragColor * colDiffuse;
 }
