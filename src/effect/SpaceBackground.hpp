@@ -13,6 +13,7 @@ public:
     void Draw(int screenWidth, int screenHeight);
     void Unload();
     void SetSector(float seed, Color c1, Color c2);
+    float GetFtlLerp() const { return ftlLerp; }
 
 private:
     Shader shader;
