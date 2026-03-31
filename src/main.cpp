@@ -57,6 +57,21 @@ struct Particle {
 };
 std::vector<Particle> particles;
 
+struct Sector {
+    float seed;
+    Color c1;
+    Color c2;
+};
+
+// Exemples basés sur tes images (Tarantula, Piliers, etc.)
+std::vector<Sector> galaxyMap = {
+    { 1.1f, { 200, 80, 40, 255 },  { 40, 40, 50, 255 } },   // Orange/Gris (Image 1)
+    { 4.5f, { 180, 60, 20, 255 },  { 10, 20, 40, 255 } },   // Nébuleuse Rouge (Image 2)
+    { 8.9f, { 40, 150, 180, 255 }, { 200, 100, 40, 255 } }, // Bleu/Or (Image 3)
+    { 12.3f, { 120, 80, 150, 255 }, { 255, 200, 150, 255 } } // Violet/Lumineux (Image 4)
+};
+int currentSectorIdx = 0;
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 static float randf() {
@@ -216,6 +231,13 @@ int main() {
             audio.PlaySfx("jump");
             shipStats.fuel = std::max(0.0f, shipStats.fuel - 1.0f);
             hud.PushNotification("-1 FUEL (saut FTL)", { 220, 160, 50, 255 });
+
+            // --- LOGIQUE DE CHANGEMENT DE SECTEUR ---
+            currentSectorIdx = (currentSectorIdx + 1) % galaxyMap.size();
+            Sector s = galaxyMap[currentSectorIdx];
+            
+            // On met à jour les données du shader via la classe bg
+            bg.SetSector(s.seed, s.c1, s.c2);
         }
 
         flashAlpha = std::max(0.0f, flashAlpha - 1.5f * dt);
