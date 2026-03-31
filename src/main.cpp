@@ -21,6 +21,7 @@
 #include "ship/Ship.hpp"
 #include "projectile/ProjectileManager.hpp"
 #include "ship/ShipStats.hpp"
+#include "effect/SpaceBackground.hpp"
 #include "hud/HUD.hpp"
 
 #include <stdlib.h>
@@ -49,6 +50,13 @@ struct Dust {
 
 #define DUST_PARTICLES 100
 
+struct Particle {
+    Vector2 pos;
+    Vector2 vel;
+    float life;
+};
+std::vector<Particle> particles;
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 static float randf() {
@@ -72,7 +80,10 @@ int main() {
     SetTargetFPS(60);
 
     // ── Shader ─────────────────────────────────────────────────
-    Shader         blurShader  = LoadShader(0, "resources/shaders/blur.fs");
+    SpaceBackground bg;
+    bg.Load("src/ressources/shader/nebula.fs");
+
+    Shader         blurShader  = LoadShader(0, "src/ressources/shader/blur.fs");
     int            locRenderSize = GetShaderLocation(blurShader, "renderSize");
     RenderTexture2D glowTarget  = LoadRenderTexture(WIDTH, HEIGHT);
 
@@ -155,27 +166,47 @@ int main() {
     const float LASER_CD   = 0.18f;
     const float MISSILE_CD = 0.9f;
 
+    bool globalImpact = false; // À passer à true quand on se fait toucher
+
     while (!WindowShouldClose()) {
         float dt = GetFrameTime();
         t += dt;
 
-        int screenW = GetScreenWidth();
-        int screenH = GetScreenHeight();
-        if (screenW < 10) screenW = WIDTH;
-        if (screenH < 10) screenH = HEIGHT;
-
+        // DÉCLARATION CLAIRE DES POSITIONS (Utilisées partout après)
+        float screenW = (float)GetScreenWidth();
+        float screenH = (float)GetScreenHeight();
         float shipX = screenW / 2.0f;
         float shipY = screenH / 2.0f;
         Vector2 shipPos = { shipX, shipY };
 
-        float rSize[2] = { (float)screenW, (float)screenH };
-        SetShaderValue(blurShader, locRenderSize, rSize, SHADER_UNIFORM_VEC2);
+        // ── 1. Update du Background (Classe décentralisée)
+        bool ftlActive = IsKeyDown(KEY_SPACE);
+        bg.Update(dt, ftlActive ? 1.0f : 0.0f, globalImpact);
+        globalImpact = false; 
+
+        // ── 2. Gestion des Particules (Correction du push_back)
+        if (IsKeyDown(KEY_W) || ftlActive) {
+            for(int i=0; i<3; i++) {
+                // Utilisation de shipX et shipY maintenant bien définis
+                Particle p;
+                p.pos = { shipX - 30, shipY + (float)GetRandomValue(-10, 10) };
+                p.vel = { (float)GetRandomValue(-200, -50), (float)GetRandomValue(-20, 20) };
+                p.life = 1.0f;
+                particles.push_back(p);
+            }
+        }
+
+        for (auto it = particles.begin(); it != particles.end();) {
+            it->pos.x += it->vel.x * dt - (ftlLerp * 1500 * dt);
+            it->pos.y += it->vel.y * dt;
+            it->life -= dt * 2.5f;
+            if (it->life <= 0) it = particles.erase(it); else ++it;
+        }
 
         const Aseprite& sSprite = ship.GetSprite();
         float shipW = IsAsepriteValid(sSprite) ? (float)GetAsepriteWidth(sSprite)  : 128.0f;
         float shipH = IsAsepriteValid(sSprite) ? (float)GetAsepriteHeight(sSprite) : 128.0f;
 
-        bool  ftlActive  = IsKeyDown(KEY_SPACE);
         float targetFtl  = ftlActive ? 1.0f : 0.0f;
         ftlLerp += (targetFtl - ftlLerp) * (2.5f * dt);
 
@@ -239,11 +270,19 @@ int main() {
         shipStats.Update(dt);
         hud.Update(dt, shipStats);
 
-        // Touches de test (à remplacer par vraie logique de combat)
-        if (IsKeyDown(KEY_F) && laserCooldown <= 0 && !ftlActive) {
-            projMgr.Spawn(ProjType::LASER, shipPos, fireAngle);
-            laserCooldown = LASER_CD;
+        if (IsKeyDown(KEY_W) || ftlActive) {
+            for(int i=0; i<3; i++) // Générer 3 particules par frame
+                particles.push_back({{shipX - 30, shipY}, {(float)GetRandomValue(-200, -50), (float)GetRandomValue(-20, 20)}, 1.0f});
         }
+
+        for (auto it = particles.begin(); it != particles.end();) {
+            it->pos.x += it->vel.x * dt - (ftlLerp * 1000 * dt); // Elles filent avec le décor
+            it->pos.y += it->vel.y * dt;
+            it->life -= dt * 2.0f;
+            if (it->life <= 0) it = particles.erase(it); else ++it;
+        }
+
+        // Touches de test (à remplacer par vraie logique de combat)
         if (IsKeyPressed(KEY_G) && missileCooldown <= 0 && !ftlActive) {
             projMgr.Spawn(ProjType::TORPEDO, shipPos, fireAngle);
             missileCooldown = MISSILE_CD;
@@ -286,42 +325,25 @@ int main() {
         BeginDrawing();
             ClearBackground(BLACK);
 
-        for (int y = 0; y < screenH; y += 2) {
-            for (int x = 0; x < screenW; x += 2) {
-
-                float nx = x + t * 40.0f;
-                float ny = y + sinf(t * 0.3f) * 30.0f;
-
-                float n = noise(nx, ny, t);
-                n = powf((n + 1.0f) * 0.5f, 2.0f);
-
-                float gradient = (float)x / screenW;
-
-                float r = (0.6f + 0.4f * sinf(n * 3 + t)) * gradient;
-                float g = (0.5f + 0.5f * sinf(n * 2 + t * 0.7f)) * (1.0f - gradient);
-                float b = (0.7f + 0.3f * sinf(n * 4 - t * 0.5f));
-
-                DrawRectangle(x, y, 2, 2, {
-                    (unsigned char)(r * 255),
-                    (unsigned char)(g * 255),
-                    (unsigned char)(b * 255),
-                    35
-                });
-            }
-        }
+            bg.Draw(screenW, screenH);
 
             BeginMode2D(camera);
 
                 for (int i = 0; i < STARS; i++)
                     DrawCircleV({ stars[i].x, stars[i].y }, stars[i].z, stars[i].color);
 
+                for (const auto& p : particles) {
+                    Color pCol = ColorAlpha(IsKeyDown(KEY_SPACE) ? SKYBLUE : ORANGE, p.life);
+                    DrawCircleV(p.pos, p.life * 4.0f, pCol);
+                }
+
+                float currentRes[2] = { (float)GetScreenWidth(), (float)GetScreenHeight() };
+                SetShaderValue(blurShader, locRenderSize, currentRes, SHADER_UNIFORM_VEC2);
+
                 BeginShaderMode(blurShader);
-                    DrawTextureRec(
-                        glowTarget.texture,
-                        { 0, 0, (float)glowTarget.texture.width, -(float)glowTarget.texture.height },
-                        { 0, 0 },
-                        WHITE
-                    );
+                    DrawTextureRec(glowTarget.texture, 
+                                { 0, 0, (float)glowTarget.texture.width, -(float)glowTarget.texture.height }, 
+                                { 0, 0 }, WHITE);
                 EndShaderMode();
 
                 // Moteur
@@ -392,6 +414,7 @@ int main() {
     UnloadTexture(engineTex);
     UnloadTexture(shieldTex);
     UnloadShader(blurShader);
+    bg.Unload();
     UnloadRenderTexture(glowTarget);
     ship.Unload();
     hud.Unload();
