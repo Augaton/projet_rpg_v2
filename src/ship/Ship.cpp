@@ -1,7 +1,7 @@
 // Ship.cpp - Implémentation de la classe Ship
 #include "Ship.hpp"
 #include "raylib.h"
-#include "lib/raylib-aseprite.h"
+#include "../lib/raylib-aseprite.h"
 
 
 Ship::Ship(float x, float y, const char* fileName) : posX(x), posY(y) {

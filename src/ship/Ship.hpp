@@ -1,7 +1,7 @@
 // Ship.hpp - Définition de la classe Ship
 #pragma once
 #include "raylib.h"
-#include "lib/raylib-aseprite.h"
+#include "../lib/raylib-aseprite.h"
 
 class Ship {
 public:
