@@ -119,8 +119,8 @@ int main() {
     audio.LoadMusic("ambience", "asset/Sound/ambience/normal.ogg");
     audio.LoadMusic("engine",   "asset/Sound/sfx/engine/engine_idle.ogg");
     audio.LoadSfx("jump",       "asset/Sound/sfx/ftl/ftl_boom.wav");
-    audio.LoadSfx("laser",      "asset/Sound/sfx/weapons/laser.wav");    // à ajouter
-    audio.LoadSfx("missile",    "asset/Sound/sfx/weapons/missile.wav");  // à ajouter
+    audio.LoadSfx("laser",      "asset/Sound/sfx/weapons/laser_fire.wav"); 
+    audio.LoadSfx("missile",    "asset/Sound/sfx/weapons/missile_fire.wav");
     audio.PlayMusic("ambience");
     audio.PlayMusic("engine");
 
@@ -203,11 +203,6 @@ int main() {
 
         smoothFtl += (ftlLerp - smoothFtl) * (5.0f * dt);
 
-        audio.Update();
-        audio.SetMusicPitch("engine",   1.0f + smoothFtl * 0.4f);
-        audio.SetMusicVolume("engine",  0.2f + smoothFtl * 0.3f);
-        audio.SetMusicVolume("ambience", 0.4f - ftlLerp * 0.2f);
-
         laserCooldown   -= dt;
         missileCooldown -= dt;
 
@@ -216,13 +211,20 @@ int main() {
         if (IsKeyDown(KEY_F) && laserCooldown <= 0 && !ftlActive) {
             projMgr.Spawn(ProjType::LASER,     shipPos, fireAngle);
             laserCooldown = LASER_CD;
-            audio.PlaySfx("laser");
+            audio.PlaySfx("laser", 1.0f, 0.3f);
         }
         if (IsKeyPressed(KEY_G) && missileCooldown <= 0 && !ftlActive) {
             projMgr.Spawn(ProjType::TORPEDO, shipPos, fireAngle);
             missileCooldown = MISSILE_CD;
-            audio.PlaySfx("missile");
+            audio.PlaySfx("missile", 1.0f, 0.3f);
         }
+
+
+        audio.Update();
+        audio.SetMusicPitch("engine",   1.0f + smoothFtl * 0.4f);
+        audio.SetMusicVolume("engine",  0.2f + smoothFtl * 0.3f);
+        audio.SetMusicVolume("ambience", 0.4f - ftlLerp * 0.2f);
+    
 
         projMgr.Update(dt);
 
