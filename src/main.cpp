@@ -19,6 +19,7 @@ Prototype game
 
 #define RAYLIB_ASEPRITE_IMPLEMENTATION
 #include "lib/raylib-aseprite.h"
+#include "AudioManager.hpp"
 
 #include "Ship.hpp"
 #include <stdlib.h>
@@ -51,6 +52,7 @@ int main() {
     SetConfigFlags(FLAG_MSAA_4X_HINT); // Active l'anti-aliasing 4x
 
     InitWindow(WIDTH, HEIGHT, "FTL-like avec Raylib");
+    InitAudioDevice();
     ToggleFullscreen(); // Optionnel selon tes préférences de test
     SetTargetFPS(60);
 
@@ -110,6 +112,14 @@ int main() {
         TraceLog(LOG_ERROR, "ERREUR : Fichier bouclier introuvable !");
     }
 
+    AudioManager audio;
+    audio.LoadMusic("ambience", "asset/Sound/ambience/normal.ogg");
+    audio.LoadMusic("engine", "asset/Sound/sfx/engine/engine_idle.ogg");
+    audio.LoadSfx("jump", "asset/Sound/sfx/ftl/ftl_boom.wav");
+
+    audio.PlayMusic("ambience");
+    audio.PlayMusic("engine");
+
     float t = 0.0f;
 
     while (!WindowShouldClose()) {
@@ -136,7 +146,11 @@ int main() {
         ftlLerp += (targetFtl - ftlLerp) * (ftlTransitionSpeed * dt);
         
         bool ftlActive = IsKeyDown(KEY_SPACE);
-        if (IsKeyPressed(KEY_SPACE)) flashAlpha = 1.0f;
+        if (IsKeyPressed(KEY_SPACE)) {
+            flashAlpha = 1.0f;
+            shakeIntensity = 20.0f;
+            audio.PlaySfx("jump");
+        }
         if (flashAlpha > 0.0f) flashAlpha -= 1.5f * dt; // Fade-out du flash
 
         // Rotation fluide du vaisseau
@@ -166,6 +180,12 @@ int main() {
                 stars[i].y = (float)GetRandomValue(0, screenHeight);
             }
         }
+
+        // --- MISE À JOUR AUDIO ---
+        audio.Update(); // Nécessaire pour le streaming
+        audio.SetMusicPitch("engine", 1.0f + (ftlLerp * 0.5f));
+        audio.SetMusicVolume("engine", 0.2f + (ftlLerp * 0.4f));
+        audio.SetMusicVolume("ambience", 0.4f - (ftlLerp * 0.2f));
 
         BeginTextureMode(glowTarget);
             ClearBackground(BLANK);
