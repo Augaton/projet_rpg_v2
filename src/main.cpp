@@ -55,6 +55,14 @@ static float randf() {
     return (rand() % 1000) / 1000.0f;
 }
 
+float noise(float x, float y, float t) {
+    return (
+        sinf(x * 0.02f + t * 0.2f) +
+        cosf(y * 0.02f - t * 0.15f) +
+        sinf((x + y) * 0.01f + t * 0.1f)
+    ) * 0.5f;
+}
+
 int main() {
     srand(time(0));
 
@@ -277,6 +285,30 @@ int main() {
 
         BeginDrawing();
             ClearBackground(BLACK);
+
+        for (int y = 0; y < screenH; y += 2) {
+            for (int x = 0; x < screenW; x += 2) {
+
+                float nx = x + t * 40.0f;
+                float ny = y + sinf(t * 0.3f) * 30.0f;
+
+                float n = noise(nx, ny, t);
+                n = powf((n + 1.0f) * 0.5f, 2.0f);
+
+                float gradient = (float)x / screenW;
+
+                float r = (0.6f + 0.4f * sinf(n * 3 + t)) * gradient;
+                float g = (0.5f + 0.5f * sinf(n * 2 + t * 0.7f)) * (1.0f - gradient);
+                float b = (0.7f + 0.3f * sinf(n * 4 - t * 0.5f));
+
+                DrawRectangle(x, y, 2, 2, {
+                    (unsigned char)(r * 255),
+                    (unsigned char)(g * 255),
+                    (unsigned char)(b * 255),
+                    35
+                });
+            }
+        }
 
             BeginMode2D(camera);
 
