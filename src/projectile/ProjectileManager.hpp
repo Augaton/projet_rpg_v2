@@ -1,18 +1,10 @@
 #pragma once
 #include "raylib.h"
+#include "Projectile.hpp"
 #include <vector>
 #include <functional>
 
-enum class ProjType { BULLET, BIG_BULLET, LASER, TORPEDO, WAVE };
 
-struct Projectile {
-    ProjType type;
-    Vector2  pos;
-    Vector2  vel;
-    float    rotation;
-    float    life;
-    bool     active;
-};
 
 class ProjectileManager {
 public:
@@ -24,9 +16,11 @@ public:
     void Draw() const;
     void Clear();
     void DrawGlow(float t) const;
+    void SpawnEnemy(Vector2 origin, float angleDeg);
 
     std::function<void(Vector2, ProjType)> onImpact;
     const std::vector<Projectile>& GetAll() const { return _proj; }
+    std::vector<Projectile>& GetAllMutable() { return _proj; }
 
 private:
     std::vector<Projectile> _proj;

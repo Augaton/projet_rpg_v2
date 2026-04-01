@@ -173,4 +173,18 @@ void ProjectileManager::DrawGlow(float t) const {
     }
 }
 
+void ProjectileManager::SpawnEnemy(Vector2 origin, float angleDeg) {
+    Vector2 dir = AngleToDir(angleDeg);
+
+    Projectile p{};
+    p.type     = ProjType::BULLET;         // Les ennemis tirent des bullets
+    p.pos      = origin;
+    p.vel      = { dir.x * 520.0f, dir.y * 520.0f };
+    p.rotation = angleDeg;
+    p.life     = 2.0f;
+    p.active   = true;
+    p.isEnemy  = true;                     // ← marqueur
+    _proj.push_back(p);
+}
+
 void ProjectileManager::Clear() { _proj.clear(); }

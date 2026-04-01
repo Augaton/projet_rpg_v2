@@ -4,7 +4,7 @@
 enum class ProjType {
     BULLET,
     BIG_BULLET,
-    RAY,
+    LASER,
     TORPEDO,
     WAVE
 };
@@ -16,4 +16,5 @@ struct Projectile {
     float    rotation;
     float    life;
     bool     active;
+    bool     isEnemy = false;
 };
