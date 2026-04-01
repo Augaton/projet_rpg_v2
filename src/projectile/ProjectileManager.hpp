@@ -18,6 +18,8 @@ public:
     void Clear();
     void DrawGlow(float t) const;
     void SpawnEnemy(Vector2 origin, float angleDeg);
+    // Tir ennemi avec type et dégâts spécifiques
+    void SpawnEnemyType(Vector2 origin, float angleDeg, ProjType type, float damage);
 
     std::function<void(Vector2, ProjType)> onImpact;
     const std::vector<Projectile>& GetAll() const { return _proj; }

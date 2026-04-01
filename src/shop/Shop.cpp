@@ -146,36 +146,43 @@ void Shop::_DrawItemRow(Font font, const Item& item,
     Color rar = Item::RarityColor(item.rarity);
     DrawRectangleRounded({ x, y, 4, h }, 0.2f, 4, rar);
 
-    // Nom
+    // ── Ligne 1 : Nom (gauche) + Prix (droite) ───────────────────────────────
     Color nameCol = canAfford ? WHITE : Color{ 130, 130, 130, 200 };
-    DrawTextEx(font, item.name.c_str(), { x + 10, y + 5 }, 14, 1, nameCol);
 
-    // Catégorie + rareté
-    char catBuf[48];
-    snprintf(catBuf, sizeof(catBuf), "%s  •  %s",
-             Item::CategoryName(item.category), Item::RarityName(item.rarity));
-    DrawTextEx(font, catBuf, { x + 10, y + h - 18 }, 11, 1, ColorAlpha(rar, 0.8f));
+    // Tronquer le nom si trop long (max ~60% de la largeur)
+    const float MAX_NAME_W = w * 0.58f;
+    std::string nameStr = item.name;
+    while (nameStr.size() > 4 &&
+           MeasureTextEx(font, nameStr.c_str(), 13, 1).x > MAX_NAME_W)
+        nameStr = nameStr.substr(0, nameStr.size() - 4) + "...";
 
-    // Stats
-    char statBuf[80] = {};
-    if (item.category == ItemCategory::WEAPON) {
-        snprintf(statBuf, sizeof(statBuf), "DMG %.0f  CD %.2fs  Rank %d",
-                 item.weapon.damage, item.weapon.cooldown, item.rank);
-    } else {
-        snprintf(statBuf, sizeof(statBuf), "+%.0f MAX  Rank %d",
-                 item.statBonus, item.rank);
-    }
-    float sw = MeasureTextEx(font, statBuf, 12, 1).x;
-    DrawTextEx(font, statBuf, { x + w - sw - 80, y + 6 }, 12, 1, SH_LABEL);
+    DrawTextEx(font, nameStr.c_str(), { x + 10, y + 6 }, 13, 1, nameCol);
 
-    // Prix
+    // Prix (droite, ligne 1)
     char priceBuf[24];
     snprintf(priceBuf, sizeof(priceBuf), "%d cr",
              (_tab == 0) ? item.buyPrice : item.sellPrice);
     float pw = MeasureTextEx(font, priceBuf, 14, 1).x;
     Color priceCol = canAfford ? Color{ 80, 220, 120, 255 }
                                : Color{ 210, 80, 80, 255 };
-    DrawTextEx(font, priceBuf, { x + w - pw - 8, y + h / 2 - 8 }, 14, 1, priceCol);
+    DrawTextEx(font, priceBuf, { x + w - pw - 8, y + 6 }, 14, 1, priceCol);
+
+    // ── Ligne 2 : Catégorie/Rareté (gauche) + Stats (droite) ─────────────────
+    char catBuf[48];
+    snprintf(catBuf, sizeof(catBuf), "%s  •  %s",
+             Item::CategoryName(item.category), Item::RarityName(item.rarity));
+    DrawTextEx(font, catBuf, { x + 10, y + h - 20 }, 11, 1, ColorAlpha(rar, 0.8f));
+
+    char statBuf[80] = {};
+    if (item.category == ItemCategory::WEAPON) {
+        snprintf(statBuf, sizeof(statBuf), "DMG %.0f  CD %.2fs  Rk%d",
+                 item.weapon.damage, item.weapon.cooldown, item.rank);
+    } else {
+        snprintf(statBuf, sizeof(statBuf), "+%.0f MAX  Rk%d",
+                 item.statBonus, item.rank);
+    }
+    float sw = MeasureTextEx(font, statBuf, 11, 1).x;
+    DrawTextEx(font, statBuf, { x + w - sw - 8, y + h - 20 }, 11, 1, SH_LABEL);
 }
 
 // ─── Draw ─────────────────────────────────────────────────────────────────────
@@ -208,7 +215,7 @@ void Shop::Draw(Font font, const Economy& eco, const Inventory& inv,
                { 80, 220, 120, 255 });
 
     // Fermer
-    DrawTextEx(font, "[ESC] Close", { PX + PW - 98, PY + 14 }, 13, 1, SH_LABEL);
+    DrawTextEx(font, "[ESC] Fermer", { PX + PW - 98, PY + 14 }, 13, 1, SH_LABEL);
 
     // ── Onglets ───────────────────────────────────────────────────────────────
     const float TAB_Y = PY + 48;

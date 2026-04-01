@@ -198,4 +198,21 @@ void ProjectileManager::SpawnEnemy(Vector2 origin, float angleDeg) {
     _proj.push_back(p);
 }
 
+void ProjectileManager::SpawnEnemyType(Vector2 origin, float angleDeg,
+                                       ProjType type, float damage) {
+    Vector2 dir = AngleToDir(angleDeg);
+    float   spd = STATS[(int)type].speed * 0.70f;  // légèrement plus lents
+
+    Projectile p{};
+    p.type     = type;
+    p.pos      = origin;
+    p.vel      = { dir.x * spd, dir.y * spd };
+    p.rotation = angleDeg;
+    p.life     = STATS[(int)type].life;
+    p.active   = true;
+    p.isEnemy  = true;
+    p.damage   = damage;
+    _proj.push_back(p);
+}
+
 void ProjectileManager::Clear() { _proj.clear(); }

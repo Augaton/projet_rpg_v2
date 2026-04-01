@@ -20,6 +20,7 @@ Ship::~Ship() {
 void Ship::Unload() {
     if (IsAsepriteValid(sprite)) {
         UnloadAseprite(sprite);
+        sprite = {};   // invalide le pointeur pour éviter le double-free
     }
 }
 

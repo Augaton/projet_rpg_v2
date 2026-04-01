@@ -76,16 +76,74 @@ static constexpr int SECTOR_COUNT = 4;
 
 enum class EnemyState { APPROACH, ATTACK, FLEE };
 
+// ─── Définitions de types d'ennemis ──────────────────────────────────────────
+
+struct EnemyDef {
+    const char* spritePath;
+    const char* enginePath;
+    float       maxHull;
+    float       fireCooldown;
+    float       projDamage;
+    ProjType    projType;
+    int         creditBase;
+    int         minZone;
+};
+
+static const EnemyDef ENEMY_DEFS[] = {
+    // Zone 0+ : légers
+    { "asset/Base/Aseprite/scout.aseprite",
+      "asset/Engine/PNGs/scout.png",         60.f, 1.0f,  8.f, ProjType::BULLET,      40, 0 },
+    { "asset/Base/Aseprite/fighter.aseprite",
+      "asset/Engine/PNGs/fighter.png",        80.f, 1.2f, 12.f, ProjType::LASER,       60, 0 },
+    // Zone 1+ : moyens
+    { "asset/Base/Aseprite/frigate.aseprite",
+      "asset/Engine/PNGs/frigate.png",       100.f, 1.5f, 15.f, ProjType::LASER,       90, 1 },
+    { "asset/Base/Aseprite/torpedo_ship.aseprite",
+      "asset/Engine/PNGs/torpedo_ship.png",  115.f, 2.0f, 35.f, ProjType::TORPEDO,    130, 1 },
+    // Zone 2+ : lourds
+    { "asset/Base/Aseprite/bomber.aseprite",
+      "asset/Engine/PNGs/bomber.png",        150.f, 2.5f, 22.f, ProjType::BIG_BULLET, 170, 2 },
+    { "asset/Base/Aseprite/support_ship.aseprite",
+      "asset/Engine/PNGs/support_ship.png",  130.f, 1.0f, 10.f, ProjType::BULLET,     120, 2 },
+    // Zone 3+ : boss
+    { "asset/Base/Aseprite/battlecruiser.aseprite",
+      "asset/Engine/PNGs/battlecruiser.png", 220.f, 1.8f, 20.f, ProjType::LASER,      220, 3 },
+    // Zone 4+ : boss ultime
+    { "asset/Base/Aseprite/dreadnought.aseprite",
+      "asset/Engine/PNGs/dreadnought.png",   320.f, 2.0f, 28.f, ProjType::TORPEDO,    350, 4 },
+};
+static constexpr int ENEMY_DEF_COUNT = 8;
+
+// Choisit un def d'ennemi adapté au niveau de zone
+static int PickEnemyDef(int zoneLevel) {
+    int candidates[ENEMY_DEF_COUNT];
+    int count = 0;
+    for (int i = 0; i < ENEMY_DEF_COUNT; i++) {
+        if (ENEMY_DEFS[i].minZone <= zoneLevel)
+            candidates[count++] = i;
+    }
+    if (count == 0) return 0;
+    // Favoriser les 3 derniers defs disponibles (plus difficiles)
+    int start = std::max(0, count - 3);
+    return candidates[start + rand() % (count - start)];
+}
+
 struct Enemy {
     Vector2    pos;
+    Vector2    basePos;  // centre d'oscillation
     Vector2    vel;
     float      rotation;
     float      hull;
+    float      maxHull;
+    float      projDmg;
+    ProjType   projType;
     float      fireTimer;
+    float      movePhase;
     EnemyState state;
     bool       active;
+    int        defIdx;
 
-    // Sprite (même pipeline que le joueur)
+    // Assets (rechargés à chaque spawn)
     Aseprite   sprite;
     Texture2D  engineTex;
 };
@@ -95,15 +153,31 @@ static int   randi(int lo, int hi) { return lo + rand() % (hi - lo + 1); }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-static void SpawnEnemy(Enemy& e, float screenW, float screenH) {
-    // Positionné à droite de l'écran (split-screen)
-    e.pos       = { screenW * 0.75f, screenH * 0.5f };
-    e.vel       = { 0, 0 };
-    e.rotation  = 270.0f;   // pointe vers la gauche
-    e.hull      = 100.0f;
-    e.fireTimer = 2.0f;
-    e.state     = EnemyState::APPROACH;
-    e.active    = true;
+static void SpawnEnemy(Enemy& e, float screenW, float screenH, int defIdx) {
+    const EnemyDef& def = ENEMY_DEFS[defIdx];
+
+    // Décharger les anciens assets si présents
+    if (e.engineTex.id > 0) { UnloadTexture(e.engineTex); e.engineTex = {}; }
+    if (IsAsepriteValid(e.sprite)) { UnloadAseprite(e.sprite); e.sprite = {}; }
+
+    // Charger les nouveaux assets
+    e.sprite    = LoadAseprite(def.spritePath);
+    e.engineTex = LoadTexture(def.enginePath);
+
+    Vector2 center  = { screenW * 0.75f, screenH * 0.5f };
+    e.pos           = center;
+    e.basePos       = center;
+    e.vel           = { 0, 0 };
+    e.rotation      = 270.0f;
+    e.hull          = def.maxHull;
+    e.maxHull       = def.maxHull;
+    e.projDmg       = def.projDamage;
+    e.projType      = def.projType;
+    e.fireTimer     = 2.0f;
+    e.movePhase     = randf() * 6.28318f;
+    e.state         = EnemyState::APPROACH;
+    e.active        = true;
+    e.defIdx        = defIdx;
 }
 
 static void UpdateEnemy(Enemy& e, Vector2 playerPos,
@@ -113,16 +187,37 @@ static void UpdateEnemy(Enemy& e, Vector2 playerPos,
                          ShipStats& /*shipStats*/, HUD& /*hud*/) {
     if (!e.active) return;
 
-    // Ennemi fixe sur la droite du split-screen, pointant vers le joueur
-    e.rotation = 270.0f;
+    // ── Mouvement oscillatoire ────────────────────────────────────────────────
+    // Les ennemis légers (scout/fighter) bougent plus vite et plus largement
+    float speed  = 1.0f + (float)std::min(e.defIdx, 3) * 0.15f;
+    float ampY   = (e.defIdx <= 1) ? 70.0f : 40.0f;
+    float ampX   = (e.defIdx <= 1) ? 28.0f :  8.0f;
 
-    // ── Tir ennemi ────────────────────────────────────────────────────────────
+    e.movePhase += dt * speed;
+    float targetY = e.basePos.y + sinf(e.movePhase) * ampY;
+    float targetX = e.basePos.x + cosf(e.movePhase * 0.6f) * ampX;
+    e.pos.y += (targetY - e.pos.y) * 4.0f * dt;
+    e.pos.x += (targetX - e.pos.x) * 3.0f * dt;
+
+    // Inclinaison dynamique (légère)
+    float lean  = cosf(e.movePhase) * ((e.defIdx <= 1) ? 12.0f : 5.0f);
+    e.rotation  = 270.0f + lean;
+
+    // ── Tir ──────────────────────────────────────────────────────────────────
     Vector2 toPlayer = { playerPos.x - e.pos.x, playerPos.y - e.pos.y };
     e.fireTimer -= dt;
     if (e.fireTimer <= 0.0f) {
         float fireAngle = atan2f(toPlayer.y, toPlayer.x) * RAD2DEG;
-        projMgr.SpawnEnemy(e.pos, fireAngle);
-        e.fireTimer = 1.5f + randf() * 1.5f;
+        projMgr.SpawnEnemyType(e.pos, fireAngle, e.projType, e.projDmg);
+
+        // Les vaisseaux-torpilles tirent en salve de 2
+        if (e.projType == ProjType::TORPEDO) {
+            float offAngle = fireAngle + 8.0f;
+            projMgr.SpawnEnemyType(e.pos, offAngle, ProjType::BULLET,
+                                   e.projDmg * 0.3f);
+        }
+        e.fireTimer = ENEMY_DEFS[e.defIdx].fireCooldown
+                      * (0.8f + randf() * 0.4f);
     }
 }
 
@@ -158,8 +253,8 @@ static void DrawEnemy(const Enemy& e, float t) {
     }
 
     // Barre de vie flottante
-    float barW = 40.0f;
-    float pct  = e.hull / 100.0f;
+    float barW = 50.0f;
+    float pct  = (e.maxHull > 0.0f) ? (e.hull / e.maxHull) : 0.0f;
     Color barC = (pct > 0.5f) ? Color{ 80, 210, 100, 200 }
                : (pct > 0.25f) ? Color{ 220, 180, 40, 200 }
                                 : Color{ 220, 60, 60, 200 };
@@ -172,10 +267,14 @@ static void DrawEnemy(const Enemy& e, float t) {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 int main() {
+
     srand(time(0));
+    // Désactive la fermeture automatique par ESC
+    SetExitKey(KEY_NULL);
 
     SetConfigFlags(FLAG_MSAA_4X_HINT);
     InitWindow(WIDTH, HEIGHT, "Augaton");
+    SetExitKey(0);
     ToggleFullscreen();
     SetTargetFPS(60);
 
@@ -297,9 +396,13 @@ int main() {
     const float JUMP_DURATION = 3.0f;
     bool  derelictPending  = false;
 
+    bool  inventoryOpen        = false;
+    int   inventorySelectedIdx = -1;
+
     // ─────────────────────────────────────────────────────────────────────────
     // Boucle principale
     // ─────────────────────────────────────────────────────────────────────────
+    bool pauseMenu = false;
     while (!WindowShouldClose()) {
         float dt = GetFrameTime();
         t += dt;
@@ -338,27 +441,52 @@ int main() {
             if (!shop.isOpen) gameState = GameState::IDLE;
         }
 
+        // Inventaire (touche I, désactivé pendant les jumps)
+        if (!shop.isOpen && !navMap.IsActive() && !isJumping &&
+            IsKeyPressed(KEY_I))
+            inventoryOpen = !inventoryOpen;
+        if (inventoryOpen && IsKeyPressed(KEY_ESCAPE)) {
+            inventoryOpen = false;
+        }
+
+        // Menu pause (ESC hors shop/inventaire/map)
+        if (!shop.isOpen && !inventoryOpen && !navMap.IsActive() && !isJumping) {
+            if (IsKeyPressed(KEY_ESCAPE)) {
+                pauseMenu = !pauseMenu;
+            }
+        }
+
+        // Quitter par F4 (toujours possible)
+        if (IsKeyPressed(KEY_F4)) {
+            break;
+        }
+
         // Ouvrir le shop manuellement (B pendant merchant)
         if (!shop.isOpen && gameState == GameState::EVENT_SHIP &&
             currentEvent == EventType::MERCHANT && IsKeyPressed(KEY_B)) {
             shop.Open();
         }
-        // ESC pour passer l'événement
-        if (!shop.isOpen && gameState == GameState::EVENT_SHIP &&
+        // ESC pour passer l'événement (seulement si inventaire et shop sont fermés et pas en pause)
+        if (!shop.isOpen && !inventoryOpen && !pauseMenu && gameState == GameState::EVENT_SHIP &&
             IsKeyPressed(KEY_ESCAPE)) {
             gameState    = GameState::IDLE;
             currentEvent = EventType::NONE;
         }
 
-        // ── Map de navigation ─────────────────────────────────────────────────
-        if (!shop.isOpen && (IsKeyPressed(KEY_TAB) || IsKeyPressed(KEY_M)))
+        // ── Map de navigation (désactivée en COMBAT) ──────────────────────────
+        if (!shop.isOpen && !inventoryOpen &&
+            gameState != GameState::COMBAT &&
+            (IsKeyPressed(KEY_TAB) || IsKeyPressed(KEY_M)))
             navMap.Toggle();
 
         if (navMap.IsActive()) {
             navMap.Update(mousePos, dt);
             if (navMap.IsJumpRequested()) {
                 bool isExit      = navMap.IsLastJumpToExit();
-                pendingSectorIdx = navMap.GetTargetSector();
+                // Le secteur n'avance qu'en franchissant la sortie de zone
+                pendingSectorIdx = isExit
+                                   ? (currentSectorIdx + 1) % SECTOR_COUNT
+                                   : currentSectorIdx;
                 isJumping        = true;
                 jumpTimer        = JUMP_DURATION;
                 audio.PlaySfx("jump");
@@ -374,6 +502,41 @@ int main() {
                 gameState    = GameState::IDLE;
                 currentEvent = EventType::NONE;
             }
+        }
+
+        // Si menu pause actif, bloquer le jeu (affichage + input)
+        if (pauseMenu) {
+            BeginDrawing();
+            ClearBackground(Color{ 10, 14, 28, 220 });
+            float mw = 340.0f, mh = 220.0f;
+            float mx = ((float)GetScreenWidth() - mw) * 0.5f;
+            float my = ((float)GetScreenHeight() - mh) * 0.5f;
+            DrawRectangleRounded({ mx, my, mw, mh }, 0.08f, 8, Color{ 18, 24, 44, 245 });
+            DrawRectangleRoundedLinesEx({ mx, my, mw, mh }, 0.08f, 8, 2.0f, Color{ 80, 120, 200, 255 });
+            Font font = hud.GetFont();
+            const char* title = "PAUSE";
+            float tw = MeasureTextEx(font, title, 32, 1).x;
+            DrawTextEx(font, title, { mx + (mw - tw) * 0.5f, my + 24 }, 32, 1, { 220, 200, 100, 255 });
+            // Boutons
+            const char* btns[2] = { "Résumé", "Quitter le jeu" };
+            int hovered = -1;
+            for (int i = 0; i < 2; ++i) {
+                float bx = mx + 60;
+                float by = my + 80 + i * 60;
+                Rectangle br = { bx, by, mw - 120, 44 };
+                bool isHover = CheckCollisionPointRec(GetMousePosition(), br);
+                Color bg = isHover ? Color{ 60, 100, 180, 220 } : Color{ 30, 40, 65, 180 };
+                DrawRectangleRounded(br, 0.18f, 6, bg);
+                DrawRectangleRoundedLinesEx(br, 0.18f, 6, 1.5f, Color{ 80, 120, 200, 255 });
+                float btw = MeasureTextEx(font, btns[i], 22, 1).x;
+                DrawTextEx(font, btns[i], { mx + (mw - btw) * 0.5f, by + 10 }, 22, 1, WHITE);
+                if (isHover && IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) hovered = i;
+            }
+            // Actions boutons
+            if (hovered == 0) pauseMenu = false;
+            if (hovered == 1) break;
+            EndDrawing();
+            continue;
         }
 
         // ── Cible FTL ─────────────────────────────────────────────────────────
@@ -418,7 +581,8 @@ int main() {
                 projMgr.Clear();
 
                 if (currentEvent == EventType::COMBAT) {
-                    SpawnEnemy(enemy, screenW, screenH);
+                    int defIdx = PickEnemyDef(navMap.GetZoneLevel());
+                    SpawnEnemy(enemy, screenW, screenH, defIdx);
                     gameState = GameState::COMBAT;
                     hud.PushNotification("ENEMY DETECTED", { 255, 80, 80, 255 });
                 } else if (currentEvent == EventType::MERCHANT) {
@@ -479,7 +643,21 @@ int main() {
         missileCooldown -= dt;
         bigBulletCd     -= dt;
         bulletCd        -= dt;
-        float fireAngle  = shipRotation - 90.0f;
+
+        // Auto-aim : calculer l'angle vers l'ennemi actif si présent
+        float fireAngle = shipRotation - 90.0f;
+        if (enemy.active && gameState == GameState::COMBAT) {
+            // Prédiction simple : viser la position future de l'ennemi
+            Vector2 toEnemy = { enemy.pos.x - shipPos.x, enemy.pos.y - shipPos.y };
+            float enemySpeed = sqrtf(enemy.vel.x * enemy.vel.x + enemy.vel.y * enemy.vel.y);
+            float projSpeed = 600.0f; // Vitesse approx. des projectiles (ajuster si besoin)
+            float dist = sqrtf(toEnemy.x * toEnemy.x + toEnemy.y * toEnemy.y);
+            float t_impact = projSpeed > 1.0f ? dist / projSpeed : 0.0f;
+            Vector2 predicted = { enemy.pos.x + enemy.vel.x * t_impact,
+                                  enemy.pos.y + enemy.vel.y * t_impact };
+            Vector2 aimVec = { predicted.x - shipPos.x, predicted.y - shipPos.y };
+            fireAngle = atan2f(aimVec.y, aimVec.x) * RAD2DEG;
+        }
 
         const Item* equipped = inventory.GetEquippedWeapon();
 
@@ -514,8 +692,7 @@ int main() {
         // ── Ennemi (combat uniquement) ────────────────────────────────────────
         if (gameState == GameState::COMBAT && !isJumping && ftlLerp < 0.1f) {
             if (enemy.active) {
-                // L'ennemi est fixe sur la droite du split-screen
-                enemy.pos = enemyFixedPos;
+                // Mise à jour position et tir (ennemi bouge librement sur la droite)
                 UpdateEnemy(enemy, shipPos, projMgr, dt, ftlLerp,
                             shakeIntensity, shipStats, hud);
 
@@ -741,12 +918,9 @@ int main() {
                 if (splitFactor > 0.05f) {
                     float midX  = screenW * 0.5f;
                     float alpha = std::min(splitFactor * 2.0f, 1.0f);
+                    // Ligne fine uniquement — plus de gradient qui assombrit le côté droit
                     DrawRectangle((int)midX - 1, 0, 2, (int)screenH,
-                                  ColorAlpha({ 40, 70, 120, 100 }, alpha));
-                    DrawRectangleGradientH(
-                        (int)midX, 0, (int)(screenW * 0.12f), (int)screenH,
-                        ColorAlpha({ 0, 0, 10, 80 }, alpha),
-                        ColorAlpha({ 0, 0, 0, 0 }, alpha));
+                                  ColorAlpha({ 60, 100, 180, 120 }, alpha));
                 }
 
                 // ── HUD joueur ────────────────────────────────────────────────
@@ -757,7 +931,7 @@ int main() {
                 if (enemy.active && gameState == GameState::COMBAT) {
                     ShipStats enemyHudStats;
                     enemyHudStats.hull      = enemy.hull;
-                    enemyHudStats.maxHull   = 100.0f;
+                    enemyHudStats.maxHull   = enemy.maxHull;
                     enemyHudStats.shield    = 0.0f;
                     enemyHudStats.maxShield = 1.0f;
                     enemyHudStats.fuel      = 0.0f;
@@ -766,27 +940,51 @@ int main() {
                 }
 
                 // ── Event overlay marchand ────────────────────────────────────
-                if (!shop.isOpen && gameState == GameState::EVENT_SHIP &&
+                if (!shop.isOpen && !inventoryOpen &&
+                    gameState == GameState::EVENT_SHIP &&
                     currentEvent == EventType::MERCHANT) {
                     hud.DrawEventBox("MERCHANT VESSEL",
                                      "A friendly ship hails you.",
                                      (int)screenW, (int)screenH);
                 }
 
-                // ── Contrôles ─────────────────────────────────────────────────
-                DrawTextEx(hud.GetFont(),
-                           "F: Fire  G: Torpedo  E: BigShot  SPACE: Bullet",
-                           { 20, 20 }, 14, 1, { 160, 170, 190, 130 });
-                DrawTextEx(hud.GetFont(),
-                           "TAB: Map  B: Shop (merchant)",
-                           { 20, 38 }, 14, 1, { 160, 170, 190, 130 });
+                // ── Barre d'action (boutons en haut à gauche) ─────────────────
+                {
+                    auto drawBtn = [&](float bx, float by,
+                                       const char* label, const char* key,
+                                       bool disabled, bool active) {
+                        Color bg2 = active    ? Color{ 30, 80, 50, 220 }
+                                  : disabled  ? Color{ 20, 20, 30, 120 }
+                                              : Color{ 20, 38, 80, 200 };
+                        Color bc2 = active    ? Color{ 60, 200, 100, 255 }
+                                  : disabled  ? Color{ 50, 55, 70, 120 }
+                                              : Color{ 60, 100, 190, 255 };
+                        Color tc2 = active    ? Color{ 80, 255, 130, 255 }
+                                  : disabled  ? Color{ 70, 75, 90, 160 }
+                                              : WHITE;
+                        DrawRectangleRounded({ bx, by, 96.0f, 24.0f }, 0.4f, 6, bg2);
+                        DrawRectangleRoundedLinesEx({ bx, by, 96.0f, 24.0f },
+                                                    0.4f, 6, 1.0f, bc2);
+                        char buf[32];
+                        snprintf(buf, sizeof(buf), "[%s] %s", key, label);
+                        float tw2 = MeasureTextEx(hud.GetFont(), buf, 12, 1).x;
+                        DrawTextEx(hud.GetFont(), buf,
+                                   { bx + (96.0f - tw2) * 0.5f, by + 6 },
+                                   12, 1, tc2);
+                    };
 
-                // Arme équipée
+                    bool mapOk = (gameState != GameState::COMBAT);
+                    drawBtn(12, 12, "MAP",       "TAB", !mapOk,      navMap.IsActive());
+                    drawBtn(114, 12, "INVENTAIRE", "I", false,        inventoryOpen);
+                }
+
+                // Arme équipée (sous les boutons)
                 if (equipped) {
                     char ewBuf[80];
                     snprintf(ewBuf, sizeof(ewBuf), "EQUIPPED: %s",
                              equipped->name.c_str());
-                    DrawTextEx(hud.GetFont(), ewBuf, { 20, 56 }, 13, 1,
+                    float ewW = MeasureTextEx(hud.GetFont(), ewBuf, 12, 1).x;
+                    DrawTextEx(hud.GetFont(), ewBuf, { (screenW - ewW) * 0.5f, 42 }, 12, 1,
                                Item::RarityColor(equipped->rarity));
                 }
 
@@ -796,7 +994,7 @@ int main() {
                     float tw = MeasureTextEx(hud.GetFont(), jumpTxt, 20, 1).x;
                     float pulse = 0.6f + 0.4f * sinf(t * 4.0f);
                     DrawTextEx(hud.GetFont(), jumpTxt,
-                               { (screenW - tw) / 2.0f, screenH - 50.0f },
+                               { (screenW - tw) * 0.5f, screenH - 50.0f },
                                20, 1, ColorAlpha(SKYBLUE, pulse));
                 }
 
@@ -819,6 +1017,211 @@ int main() {
             if (shop.isOpen)
                 shop.Draw(hud.GetFont(), economy, inventory,
                           (int)screenW, (int)screenH);
+
+            // ── Inventaire overlay ─────────────────────────────────────────────
+            if (inventoryOpen && !shop.isOpen) {
+                const float PW = std::min(780.0f, (float)screenW - 40.0f);
+                const float PH = (float)screenH - 50.0f;
+                const float PX = (screenW - PW) / 2.0f;
+                const float PY = 25.0f;
+                Font font = hud.GetFont();
+
+                DrawRectangle(0, 0, (int)screenW, (int)screenH, { 0, 0, 0, 185 });
+                DrawRectangleRounded({ PX, PY, PW, PH }, 0.03f, 6,
+                                     { 8, 12, 24, 245 });
+                DrawRectangleRoundedLinesEx({ PX, PY, PW, PH }, 0.03f, 6,
+                                            1.2f, { 50, 70, 110, 255 });
+
+                // Titre
+                const char* invTitle = "INVENTAIRE & VAISSEAUX";
+                float itw = MeasureTextEx(font, invTitle, 20, 1).x;
+                DrawTextEx(font, invTitle,
+                           { (screenW - itw) * 0.5f, PY + 10 },
+                           20, 1, { 220, 200, 100, 255 });
+
+                const float LEFT_W = PW * 0.48f;
+                const float RIGHT_X = PX + LEFT_W + 16;
+                const float RIGHT_W = PW - LEFT_W - 24;
+                const float LIST_Y  = PY + 46.0f;
+                const float ROW_H   = 50.0f;
+                const float ROW_GAP = 3.0f;
+
+                // Navigation clavier dans la liste
+                int itemCount = (int)inventory.items.size();
+                if (IsKeyPressed(KEY_UP)   && inventorySelectedIdx > 0)
+                    inventorySelectedIdx--;
+                if (IsKeyPressed(KEY_DOWN) && inventorySelectedIdx < itemCount - 1)
+                    inventorySelectedIdx++;
+                if (itemCount == 0) inventorySelectedIdx = -1;
+
+                // Clic souris
+                { float ry = LIST_Y;
+                  for (int i = 0; i < itemCount; i++) {
+                    if (ry + ROW_H > PY + PH - 38) break;
+                    Rectangle r = { PX + 8, ry, LEFT_W - 8, ROW_H };
+                    if (CheckCollisionPointRec(GetMousePosition(), r) &&
+                        IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
+                        inventorySelectedIdx = i;
+                    ry += ROW_H + ROW_GAP;
+                  }
+                }
+
+                // E = équiper selon catégorie
+                if (IsKeyPressed(KEY_E) && inventorySelectedIdx >= 0 &&
+                    inventorySelectedIdx < itemCount) {
+                    const Item& sel = inventory.items[inventorySelectedIdx];
+                    if      (sel.category == ItemCategory::WEAPON)
+                        inventory.EquipWeapon(inventorySelectedIdx);
+                    else if (sel.category == ItemCategory::SHIELD_MOD)
+                        inventory.EquipShield(inventorySelectedIdx);
+                    else if (sel.category == ItemCategory::HULL_MOD)
+                        inventory.EquipHull(inventorySelectedIdx);
+                }
+
+                // ── Liste items (gauche) ───────────────────────────────────────
+                { float ry = LIST_Y;
+                  for (int i = 0; i < itemCount; i++) {
+                    if (ry + ROW_H > PY + PH - 38) break;
+                    const Item& item = inventory.items[i];
+                    bool  isSel = (i == inventorySelectedIdx);
+                    bool  isEqW = (i == inventory.equippedWeaponIdx);
+                    bool  isEqS = (i == inventory.equippedShieldIdx);
+                    bool  isEqH = (i == inventory.equippedHullIdx);
+                    bool  isEq  = (isEqW || isEqS || isEqH);
+
+                    Color bg2 = isSel ? Color{ 35, 55, 100, 210 }
+                                      : Color{ 14, 20, 38, 160 };
+                    DrawRectangleRounded({ PX + 8, ry, LEFT_W - 8, ROW_H },
+                                         0.12f, 4, bg2);
+                    DrawRectangleRoundedLinesEx({ PX + 8, ry, LEFT_W - 8, ROW_H },
+                                                 0.12f, 4, 0.8f,
+                                                 isSel ? Color{ 70, 110, 180, 255 }
+                                                       : Color{ 30, 40, 65, 150 });
+                    Color rc = Item::RarityColor(item.rarity);
+                    DrawRectangleRounded({ PX + 8, ry, 3, ROW_H }, 0.15f, 4, rc);
+
+                    // Tronquer nom
+                    std::string nm = item.name;
+                    const float MAX_NW = LEFT_W * 0.70f;
+                    while (nm.size() > 4 &&
+                           MeasureTextEx(font, nm.c_str(), 13, 1).x > MAX_NW)
+                        nm = nm.substr(0, nm.size() - 4) + "...";
+                    DrawTextEx(font, nm.c_str(), { PX + 16, ry + 6 }, 13, 1, WHITE);
+
+                    char cat2[48];
+                    snprintf(cat2, sizeof(cat2), "%s • %s",
+                             Item::CategoryName(item.category),
+                             Item::RarityName(item.rarity));
+                    DrawTextEx(font, cat2, { PX + 16, ry + ROW_H - 18 },
+                               11, 1, ColorAlpha(rc, 0.8f));
+
+                    if (isEq) {
+                        DrawTextEx(font, "EQUIPÉ",
+                                   { PX + LEFT_W - 58, ry + 6 },
+                                   11, 1, { 80, 220, 80, 255 });
+                    }
+                    ry += ROW_H + ROW_GAP;
+                  }
+                                    if (itemCount == 0) {
+                                        const char* emptyTxt = "Inventaire vide.";
+                                        float etw = MeasureTextEx(font, emptyTxt, 14, 1).x;
+                                        DrawTextEx(font, emptyTxt,
+                                                             { (screenW - etw) * 0.5f, LIST_Y + 20 },
+                                                             14, 1, { 120, 130, 150, 200 });
+                                    }
+                }
+
+                // Séparateur
+                DrawRectangle((int)(RIGHT_X - 8), (int)LIST_Y,
+                              1, (int)(PH - 58), { 40, 55, 90, 120 });
+
+                // ── Stats & équipement (droite) ───────────────────────────────
+                { float ry = LIST_Y;
+                  DrawTextEx(font, "ÉQUIPEMENT",
+                             { RIGHT_X, ry }, 15, 1, { 180, 200, 255, 225 });
+                  ry += 22;
+
+                  auto drawSlot = [&](const char* label,
+                                      const Item* eq, float& ry2) {
+                    DrawTextEx(font, label, { RIGHT_X, ry2 }, 12, 1,
+                               { 140, 155, 185, 200 });
+                    if (eq) {
+                        char sb[80];
+                        snprintf(sb, sizeof(sb), "%s", eq->name.c_str());
+                        // tronquer
+                        std::string eqN = sb;
+                        while (eqN.size() > 4 &&
+                               MeasureTextEx(font, eqN.c_str(), 12, 1).x > RIGHT_W - 4)
+                            eqN = eqN.substr(0, eqN.size() - 4) + "...";
+                        DrawTextEx(font, eqN.c_str(),
+                                   { RIGHT_X + 90, ry2 }, 12, 1,
+                                   Item::RarityColor(eq->rarity));
+                    } else {
+                        DrawTextEx(font, "[vide]",
+                                   { RIGHT_X + 90, ry2 }, 12, 1,
+                                   { 80, 85, 100, 180 });
+                    }
+                    ry2 += 18;
+                  };
+
+                  const Item* eqW = inventory.GetEquippedWeapon();
+                  const Item* eqS = inventory.GetEquippedShield();
+                  const Item* eqH = inventory.GetEquippedHull();
+                  drawSlot("ARME  :", eqW, ry);
+                  if (eqW) {
+                    char wd[48];
+                    snprintf(wd, sizeof(wd), "  DMG %.0f  CD %.2fs",
+                             eqW->weapon.damage, eqW->weapon.cooldown);
+                    DrawTextEx(font, wd, { RIGHT_X, ry }, 11, 1,
+                               { 160, 170, 190, 200 });
+                    ry += 16;
+                  }
+                  drawSlot("BOUCLIER:", eqS, ry);
+                  drawSlot("COQUE :", eqH, ry);
+                  ry += 10;
+
+                  DrawTextEx(font, "STATISTIQUES",
+                             { RIGHT_X, ry }, 14, 1, { 180, 200, 255, 225 });
+                  ry += 20;
+
+                  char hBuf2[48], sBuf3[48], fBuf2[48], crBuf2[36];
+                  snprintf(hBuf2,  sizeof(hBuf2),
+                           "Coque        %.0f / %.0f",
+                           shipStats.hull, shipStats.maxHull);
+                  snprintf(sBuf3,  sizeof(sBuf3),
+                           "Bouclier     %.0f / %.0f",
+                           shipStats.shield, shipStats.maxShield);
+                  snprintf(fBuf2,  sizeof(fBuf2),
+                           "Carburant    %.0f / %.0f",
+                           shipStats.fuel, shipStats.maxFuel);
+                  snprintf(crBuf2, sizeof(crBuf2),
+                           "Crédits      %d", economy.credits);
+                  DrawTextEx(font, hBuf2,  { RIGHT_X, ry },      12, 1,
+                             { 80, 210, 120, 255 });
+                  DrawTextEx(font, sBuf3,  { RIGHT_X, ry + 16 }, 12, 1,
+                             { 80, 180, 255, 255 });
+                  DrawTextEx(font, fBuf2,  { RIGHT_X, ry + 32 }, 12, 1,
+                             { 220, 160, 50, 255 });
+                  DrawTextEx(font, crBuf2, { RIGHT_X, ry + 48 }, 12, 1,
+                             { 255, 210, 80, 255 });
+                  ry += 70;
+
+                  char znBuf2[64];
+                  snprintf(znBuf2, sizeof(znBuf2), "Zone %d  •  %s",
+                           navMap.GetZoneLevel() + 1,
+                           SECTORS[currentSectorIdx % SECTOR_COUNT].name);
+                  DrawTextEx(font, znBuf2, { RIGHT_X, ry }, 11, 1,
+                             { 120, 140, 180, 200 });
+                }
+
+                // Footer
+                const char* invHint =
+                    "[↑↓] Naviguer   [E] Équiper   [ESC] Fermer";
+                float ihw = MeasureTextEx(font, invHint, 12, 1).x;
+                DrawTextEx(font, invHint,
+                           { (screenW - ihw) * 0.5f, PY + PH - 22 },
+                           12, 1, { 100, 110, 140, 200 });
+            }
 
         EndDrawing();
     }
