@@ -18,6 +18,7 @@
 #include "lib/raylib-aseprite.h"
 
 #include "audio/AudioManager.hpp"
+#include "audio/random_gun_sfx.hpp"
 #include "ship/Ship.hpp"
 #include "projectile/ProjectileManager.hpp"
 #include "ship/ShipStats.hpp"
@@ -277,6 +278,12 @@ int main() {
     audio.LoadSfx("jump",       "asset/Sound/sfx/ftl/ftl_boom.wav");
     audio.LoadSfx("laser",      "asset/Sound/sfx/weapons/laser_fire.wav");
     audio.LoadSfx("missile",    "asset/Sound/sfx/weapons/missile_fire.wav");
+    // Sons de tir randomisés
+    audio.LoadSfx("gun_1", "asset/Sound/sfx/weapons/gun_1.wav");
+    audio.LoadSfx("gun_2", "asset/Sound/sfx/weapons/gun_2.wav");
+    audio.LoadSfx("gun_3", "asset/Sound/sfx/weapons/gun_3.wav");
+    audio.LoadSfx("gun_4", "asset/Sound/sfx/weapons/gun_4.wav");
+    audio.LoadSfx("gun_5", "asset/Sound/sfx/weapons/gun_5.wav");
     audio.PlayMusic("ambience");
     audio.PlayMusic("engine");
 
@@ -443,6 +450,11 @@ int main() {
             }
             if (IsKeyPressed(KEY_E)) {
                 projMgr.Spawn(ProjType::BIG_BULLET, shipPos, fireAngle);
+                audio.PlaySfx(random_gun_sfx<5>("gun_").c_str());
+            }
+            if (IsKeyPressed(KEY_SPACE)) {
+                projMgr.Spawn(ProjType::BULLET, shipPos, fireAngle);
+                audio.PlaySfx(random_gun_sfx<5>("gun_").c_str());
             }
         }
 
