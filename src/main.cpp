@@ -306,7 +306,7 @@ int main() {
 
     // ── Ennemi ────────────────────────────────────────────────────────────────
     Enemy enemy = {};
-    enemy.sprite    = LoadAseprite("asset/Base/Aseprite/enemy_frigate.aseprite");
+    enemy.sprite    = LoadAseprite("asset/Base/Aseprite/frigate.aseprite");
     enemy.engineTex = LoadTexture("asset/Engine/PNGs/frigate.png"); // même sprite pour l'instant
     enemy.active    = false;
 
