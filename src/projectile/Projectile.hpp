@@ -17,4 +17,5 @@ struct Projectile {
     float    life;
     bool     active;
     bool     isEnemy = false;
+    float    damage  = 10.0f;  // Dégâts sur impact
 };

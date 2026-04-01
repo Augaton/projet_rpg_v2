@@ -98,23 +98,33 @@ void HUD::_DrawBar(Vector2 pos, float w, float h,
     _DrawText(buf, { pos.x + w - tw, pos.y - labelSize - 3 }, labelSize, fill);
 }
 
-// Fuel en pips discrets (style FTL exact)
-void HUD::_DrawFuelPips(Vector2 pos, int current, int max) const {
-    const float PIP_W    = 14.0f;
-    const float PIP_H    = 18.0f;
-    const float PIP_GAP  =  4.0f;
+// Fuel en pips discrets — 2 lignes si max > 10
+void HUD::_DrawFuelPips(Vector2 pos, int current, int max, float totalW) const {
+    if (max <= 0) return;
+
+    // Nombre de colonnes : 10 maximum par ligne
+    int  cols   = std::min(max, 10);
+    int  rows   = (max + cols - 1) / cols;
+    float slotW = totalW / cols;
+    const float PIP_W   = slotW - 3.0f;
+    const float PIP_H   = 14.0f;
+    const float PIP_GAP =  3.0f;
+    const float ROW_GAP =  4.0f;
 
     for (int i = 0; i < max; i++) {
-        float x = pos.x + i * (PIP_W + PIP_GAP);
-        bool  on = i < current;
+        int   col = i % cols;
+        int   row = i / cols;
+        float x   = pos.x + col * (PIP_W + PIP_GAP);
+        float y   = pos.y + row * (PIP_H + ROW_GAP);
+        bool  on  = i < current;
 
-        Color fill   = on ? C_FUEL        : C_BAR_BG;
-        Color border = on ? C_FUEL        : C_BORDER;
+        Color fill   = on ? C_FUEL  : C_BAR_BG;
+        Color border = on ? C_FUEL  : C_BORDER;
 
-        DrawRectangleRounded({ x, pos.y, PIP_W, PIP_H }, 0.2f, 4, fill);
-        DrawRectangleRoundedLinesEx({ x, pos.y, PIP_W, PIP_H },
-                                    0.2f, 4, 1.0f, border);
+        DrawRectangleRounded({ x, y, PIP_W, PIP_H }, 0.2f, 4, fill);
+        DrawRectangleRoundedLinesEx({ x, y, PIP_W, PIP_H }, 0.2f, 4, 1.0f, border);
     }
+    (void)rows; // computed but not needed directly
 }
 
 // ─── Panneau principal (bas-gauche) ──────────────────────────────────────────
@@ -190,7 +200,7 @@ void HUD::_DrawShipStatus(Vector2 origin, const ShipStats& stats) const {
     _DrawText(fuelBuf, { bx + BAR_W - fw, by - LABEL_SZ - 3 },
               LABEL_SZ, (fuelCur <= 3) ? C_HULL_LOW : C_FUEL);
 
-    _DrawFuelPips({ bx, by }, fuelCur, fuelMax);
+    _DrawFuelPips({ bx, by }, fuelCur, fuelMax, BAR_W);
 }
 
 // ─── Draw principal ───────────────────────────────────────────────────────────
@@ -234,4 +244,56 @@ void HUD::Draw(const ShipStats& stats, int screenW, int screenH) const {
                   15.0f,
                   ColorAlpha(n.color, alpha));
     }
+}
+
+// ─── Crédits ─────────────────────────────────────────────────────────────────
+
+void HUD::DrawCredits(int credits, int screenW, int /*screenH*/) const {
+    char buf[32];
+    snprintf(buf, sizeof(buf), "Credits: %d", credits);
+    float tw = _MeasureText(buf, 16.0f);
+    float x  = (float)screenW / 2.0f - tw / 2.0f;
+    _DrawText(buf, { x, 8.0f }, 16.0f, { 255, 210, 80, 220 });
+}
+
+// ─── Boîte d'événement (centre) ──────────────────────────────────────────────
+
+void HUD::DrawEventBox(const char* title, const char* body,
+                        int screenW, int screenH) const {
+    const float W = 400.0f, H = 120.0f;
+    float x = (screenW - W) / 2.0f;
+    float y = (screenH - H) / 2.0f - 60.0f;
+
+    DrawRectangleRounded({ x, y, W, H }, 0.08f, 6, C_PANEL_BG);
+    DrawRectangleRoundedLinesEx({ x, y, W, H }, 0.08f, 6, 1.2f, C_BORDER);
+
+    float ttw = _MeasureText(title, 20.0f);
+    _DrawText(title, { x + (W - ttw) / 2, y + 14 }, 20.0f, { 255, 200, 80, 255 });
+
+    float btw = _MeasureText(body, 15.0f);
+    _DrawText(body,  { x + (W - btw) / 2, y + 52 }, 15.0f, C_LABEL);
+
+    const char* hint = "[B] Shop   [ESC] Skip";
+    float htw = _MeasureText(hint, 12.0f);
+    _DrawText(hint, { x + (W - htw) / 2, y + H - 26 }, 12.0f,
+              ColorAlpha(C_LABEL, 0.7f));
+}
+
+// ─── HUD ennemi (bas-droite, miroir) ─────────────────────────────────────────
+
+void HUD::DrawForEnemy(const ShipStats& stats, int screenW, int screenH) const {
+    const float BAR_W  = 200.0f;
+    const float PAD    = 18.0f;
+    const float panelW = BAR_W + PAD * 2;
+
+    // Panneau miroir bas-droite
+    float px = (float)screenW - panelW - 16.0f;
+    float py = (float)screenH - 175.0f;
+    _DrawShipStatus({ px, py }, stats);
+
+    // Label "ENEMY" au-dessus du panneau
+    const char* label = "ENEMY";
+    float lw = _MeasureText(label, 13.0f);
+    _DrawText(label, { px + panelW - lw - PAD, py - 18.0f },
+              13.0f, { 220, 80, 60, 200 });
 }

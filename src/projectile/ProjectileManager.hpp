@@ -11,7 +11,8 @@ public:
     void Load();
     void Unload();
 
-    void Spawn(ProjType type, Vector2 origin, float angleDeg);
+    // damage = -1 → utilise la valeur par défaut du type
+    void Spawn(ProjType type, Vector2 origin, float angleDeg, float damage = -1.0f);
     void Update(float dt);
     void Draw() const;
     void Clear();

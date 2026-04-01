@@ -34,7 +34,16 @@ void ProjectileManager::Unload() {
 
 // ─── Spawn ────────────────────────────────────────────────────────────────────
 
-void ProjectileManager::Spawn(ProjType type, Vector2 origin, float angleDeg) {
+// Dégâts par défaut selon le type
+static const float DEFAULT_DMG[5] = {
+    10.0f,  // BULLET
+    20.0f,  // BIG_BULLET
+    12.0f,  // LASER
+    35.0f,  // TORPEDO
+    20.0f,  // WAVE
+};
+
+void ProjectileManager::Spawn(ProjType type, Vector2 origin, float angleDeg, float damage) {
     Vector2 dir = AngleToDir(angleDeg);
     float   spd = STATS[(int)type].speed;
 
@@ -45,6 +54,7 @@ void ProjectileManager::Spawn(ProjType type, Vector2 origin, float angleDeg) {
     p.rotation = angleDeg;
     p.life     = STATS[(int)type].life;
     p.active   = true;
+    p.damage   = (damage < 0.0f) ? DEFAULT_DMG[(int)type] : damage;
     _proj.push_back(p);
 }
 
@@ -184,6 +194,7 @@ void ProjectileManager::SpawnEnemy(Vector2 origin, float angleDeg) {
     p.life     = 2.0f;
     p.active   = true;
     p.isEnemy  = true;                     // ← marqueur
+    p.damage   = 12.0f;
     _proj.push_back(p);
 }
 

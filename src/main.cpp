@@ -25,6 +25,11 @@
 #include "effect/SpaceBackground.hpp"
 #include "map/galaxymap.hpp"
 #include "hud/HUD.hpp"
+#include "game/GameState.hpp"
+#include "inventory/Item.hpp"
+#include "inventory/Inventory.hpp"
+#include "economy/Economy.hpp"
+#include "shop/Shop.hpp"
 
 #include <stdlib.h>
 #include <time.h>
@@ -53,17 +58,13 @@ struct Particle {
     Color   color;
 };
 
-// Définition d'un secteur — seed + palette pour SpaceBackground
-struct Sector {
-    float seed;
-    Color c1;
-    Color c2;
-    const char* name;
-};
+
 
 // ─── Données secteurs ─────────────────────────────────────────────────────────
 
-static const Sector SECTORS[] = {
+// Utilise la structure SectorDef de galexymap.hpp
+#include "map/galaxymap.hpp"
+static const SectorDef SECTORS[] = {
     { 1.1f,  { 200,  80,  40, 255 }, {  40,  40,  50, 255 }, "TARANTULA"  },
     { 4.5f,  { 180,  60,  20, 255 }, {  10,  20,  40, 255 }, "RED GIANT"  },
     { 8.9f,  {  40, 150, 180, 255 }, { 200, 100,  40, 255 }, "AZURE RIFT" },
@@ -90,13 +91,13 @@ struct Enemy {
 };
 
 static float randf() { return (rand() % 1000) / 1000.0f; }
+static int   randi(int lo, int hi) { return lo + rand() % (hi - lo + 1); }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 static void SpawnEnemy(Enemy& e, float screenW, float screenH) {
-    // Spawn hors écran à droite
-    e.pos       = { screenW + 80.0f,
-                    screenH * 0.3f + randf() * screenH * 0.4f };
+    // Positionné à droite de l'écran (split-screen)
+    e.pos       = { screenW * 0.75f, screenH * 0.5f };
     e.vel       = { 0, 0 };
     e.rotation  = 270.0f;   // pointe vers la gauche
     e.hull      = 100.0f;
@@ -107,68 +108,22 @@ static void SpawnEnemy(Enemy& e, float screenW, float screenH) {
 
 static void UpdateEnemy(Enemy& e, Vector2 playerPos,
                          ProjectileManager& projMgr,
-                         float dt, float ftlLerp,
-                         float& shakeIntensity,
-                         ShipStats& shipStats, HUD& hud) {
+                         float dt, float /*ftlLerp*/,
+                         float& /*shakeIntensity*/,
+                         ShipStats& /*shipStats*/, HUD& /*hud*/) {
     if (!e.active) return;
 
-    Vector2 toPlayer = { playerPos.x - e.pos.x, playerPos.y - e.pos.y };
-    float   dist     = sqrtf(toPlayer.x * toPlayer.x + toPlayer.y * toPlayer.y);
-    Vector2 dirNorm  = (dist > 0.1f)
-                       ? Vector2{ toPlayer.x / dist, toPlayer.y / dist }
-                       : Vector2{ -1, 0 };
-
-    // ── Machine à états ───────────────────────────────────────────────────────
-    if (e.hull < 30.0f)                        e.state = EnemyState::FLEE;
-    else if (dist < 280.0f)                    e.state = EnemyState::ATTACK;
-    else if (e.state != EnemyState::FLEE)      e.state = EnemyState::APPROACH;
-
-    const float APPROACH_SPD = 90.0f;
-    const float ATTACK_SPD   = 30.0f;
-    const float FLEE_SPD     = 150.0f;
-
-    switch (e.state) {
-        case EnemyState::APPROACH:
-            e.vel.x += (dirNorm.x * APPROACH_SPD - e.vel.x) * dt * 3.0f;
-            e.vel.y += (dirNorm.y * APPROACH_SPD - e.vel.y) * dt * 3.0f;
-            break;
-        case EnemyState::ATTACK:
-            // Orbite autour du joueur
-            e.vel.x += (dirNorm.x * ATTACK_SPD + dirNorm.y * 60.0f - e.vel.x) * dt * 2.5f;
-            e.vel.y += (dirNorm.y * ATTACK_SPD - dirNorm.x * 60.0f - e.vel.y) * dt * 2.5f;
-            break;
-        case EnemyState::FLEE:
-            e.vel.x += (-dirNorm.x * FLEE_SPD - e.vel.x) * dt * 4.0f;
-            e.vel.y += (-dirNorm.y * FLEE_SPD - e.vel.y) * dt * 4.0f;
-            break;
-    }
-
-    // Décalage FTL — l'ennemi est emporté vers la gauche avec le décor
-    e.vel.x -= ftlLerp * 300.0f * dt;
-
-    e.pos.x += e.vel.x * dt;
-    e.pos.y += e.vel.y * dt;
-
-    // Rotation smooth vers la direction de déplacement
-    if (dist > 0.1f) {
-        float targetRot = atan2f(toPlayer.y, toPlayer.x) * RAD2DEG + 90.0f;
-        float delta = targetRot - e.rotation;
-        while (delta >  180.0f) delta -= 360.0f;
-        while (delta < -180.0f) delta += 360.0f;
-        e.rotation += delta * dt * 4.0f;
-    }
+    // Ennemi fixe sur la droite du split-screen, pointant vers le joueur
+    e.rotation = 270.0f;
 
     // ── Tir ennemi ────────────────────────────────────────────────────────────
+    Vector2 toPlayer = { playerPos.x - e.pos.x, playerPos.y - e.pos.y };
     e.fireTimer -= dt;
-    if (e.fireTimer <= 0.0f && e.state == EnemyState::ATTACK) {
+    if (e.fireTimer <= 0.0f) {
         float fireAngle = atan2f(toPlayer.y, toPlayer.x) * RAD2DEG;
-        projMgr.SpawnEnemy(e.pos, fireAngle);   // voir note ProjectileManager
-        e.fireTimer = 1.8f + randf() * 1.2f;
+        projMgr.SpawnEnemy(e.pos, fireAngle);
+        e.fireTimer = 1.5f + randf() * 1.5f;
     }
-
-    // ── Désactivation hors écran ──────────────────────────────────────────────
-    if (e.pos.x < -200.0f || e.pos.x > 2000.0f)
-        e.active = false;
 }
 
 static void DrawEnemy(const Enemy& e, float t) {
@@ -225,7 +180,7 @@ int main() {
     SetTargetFPS(60);
 
     GalaxyMap navMap;
-    navMap.Generate(WIDTH, HEIGHT);
+    navMap.Generate(WIDTH, HEIGHT, SECTORS, SECTOR_COUNT);
 
     // ── Shaders ───────────────────────────────────────────────────────────────
     SpaceBackground bg;
@@ -259,6 +214,16 @@ int main() {
     float shipRotation   = 90.0f;
     float t              = 0.0f;
 
+    // ── Layout split-screen (0=centré, 1=splitté) ─────────────────────────────
+    float splitFactor = 0.0f;
+
+    // ── Systèmes RPG ──────────────────────────────────────────────────────────
+    GameState  gameState    = GameState::IDLE;
+    EventType  currentEvent = EventType::NONE;
+    Economy    economy;
+    Inventory  inventory;
+    Shop       shop;
+
     // ── Assets joueur ─────────────────────────────────────────────────────────
     Ship      ship(0, 0, "asset/Base/Aseprite/frigate.aseprite");
     Texture2D engineTex = LoadTexture("asset/Engine/PNGs/frigate.png");
@@ -278,12 +243,11 @@ int main() {
     audio.LoadSfx("jump",       "asset/Sound/sfx/ftl/ftl_boom.wav");
     audio.LoadSfx("laser",      "asset/Sound/sfx/weapons/laser_fire.wav");
     audio.LoadSfx("missile",    "asset/Sound/sfx/weapons/missile_fire.wav");
-    // Sons de tir randomisés
-    audio.LoadSfx("gun_1", "asset/Sound/sfx/weapons/gun_1.wav");
-    audio.LoadSfx("gun_2", "asset/Sound/sfx/weapons/gun_2.wav");
-    audio.LoadSfx("gun_3", "asset/Sound/sfx/weapons/gun_3.wav");
-    audio.LoadSfx("gun_4", "asset/Sound/sfx/weapons/gun_4.wav");
-    audio.LoadSfx("gun_5", "asset/Sound/sfx/weapons/gun_5.wav");
+    audio.LoadSfx("gun_1",      "asset/Sound/sfx/weapons/gun_1.wav");
+    audio.LoadSfx("gun_2",      "asset/Sound/sfx/weapons/gun_2.wav");
+    audio.LoadSfx("gun_3",      "asset/Sound/sfx/weapons/gun_3.wav");
+    audio.LoadSfx("gun_4",      "asset/Sound/sfx/weapons/gun_4.wav");
+    audio.LoadSfx("gun_5",      "asset/Sound/sfx/weapons/gun_5.wav");
     audio.PlayMusic("ambience");
     audio.PlayMusic("engine");
 
@@ -298,7 +262,8 @@ int main() {
 
     float laserCooldown   = 0.0f;
     float missileCooldown = 0.0f;
-    const float LASER_CD   = 0.18f;
+    float bigBulletCd     = 0.0f;
+    float bulletCd        = 0.0f;
     const float MISSILE_CD = 0.9f;
 
     projMgr.onImpact = [&](Vector2, ProjType type) {
@@ -314,10 +279,11 @@ int main() {
     // ── Ennemi ────────────────────────────────────────────────────────────────
     Enemy enemy = {};
     enemy.sprite    = LoadAseprite("asset/Base/Aseprite/frigate.aseprite");
-    enemy.engineTex = LoadTexture("asset/Engine/PNGs/frigate.png"); // même sprite pour l'instant
+    enemy.engineTex = LoadTexture("asset/Engine/PNGs/frigate.png");
     enemy.active    = false;
 
-    float enemySpawnTimer = 8.0f;  // Premier spawn dans 8s
+    float enemySpawnTimer = 99.0f;  // géré par événements carte
+    (void)enemySpawnTimer;
 
     // ── Particules ────────────────────────────────────────────────────────────
     std::vector<Particle> particles;
@@ -329,6 +295,7 @@ int main() {
     int   pendingSectorIdx = -1;
     int   currentSectorIdx = 0;
     const float JUMP_DURATION = 3.0f;
+    bool  derelictPending  = false;
 
     // ─────────────────────────────────────────────────────────────────────────
     // Boucle principale
@@ -339,28 +306,73 @@ int main() {
 
         const float screenW = (float)GetScreenWidth();
         const float screenH = (float)GetScreenHeight();
-        const float shipX   = screenW / 2.0f;
-        const float shipY   = screenH / 2.0f;
-        const Vector2 shipPos = { shipX, shipY };
+
+        // ── splitFactor : transition douce entre centré et split ──────────────
+        float targetSplit = (gameState == GameState::COMBAT ||
+                             gameState == GameState::EVENT_SHIP) ? 1.0f : 0.0f;
+        splitFactor += (targetSplit - splitFactor) * 5.0f * dt;
+
+        // Position joueur selon split (0.5 centré → 0.25 split gauche)
+        const float shipX = screenW * (0.5f - 0.25f * splitFactor);
+        const float shipY = screenH * 0.5f;
+        const Vector2 shipPos     = { shipX, shipY };
+        const Vector2 enemyFixedPos = { screenW * 0.75f, screenH * 0.5f };
 
         Vector2 mousePos = GetMousePosition();
 
+        // ── Loot épave automatique ────────────────────────────────────────────
+        if (derelictPending) {
+            derelictPending = false;
+            int loot = randi(40, 180);
+            economy.Earn(loot);
+            char dbuf[48];
+            snprintf(dbuf, sizeof(dbuf), "+%d CREDITS (DERELICT)", loot);
+            hud.PushNotification(dbuf, { 200, 170, 60, 255 });
+            gameState = GameState::IDLE;
+        }
+
+        // ── Shop update ───────────────────────────────────────────────────────
+        if (shop.isOpen) {
+            shop.Update(mousePos, economy, inventory, shipStats,
+                        (int)screenW, (int)screenH);
+            if (!shop.isOpen) gameState = GameState::IDLE;
+        }
+
+        // Ouvrir le shop manuellement (B pendant merchant)
+        if (!shop.isOpen && gameState == GameState::EVENT_SHIP &&
+            currentEvent == EventType::MERCHANT && IsKeyPressed(KEY_B)) {
+            shop.Open();
+        }
+        // ESC pour passer l'événement
+        if (!shop.isOpen && gameState == GameState::EVENT_SHIP &&
+            IsKeyPressed(KEY_ESCAPE)) {
+            gameState    = GameState::IDLE;
+            currentEvent = EventType::NONE;
+        }
+
         // ── Map de navigation ─────────────────────────────────────────────────
-        if (IsKeyPressed(KEY_TAB) || IsKeyPressed(KEY_M))
+        if (!shop.isOpen && (IsKeyPressed(KEY_TAB) || IsKeyPressed(KEY_M)))
             navMap.Toggle();
 
         if (navMap.IsActive()) {
-            navMap.Update(mousePos);
+            navMap.Update(mousePos, dt);
             if (navMap.IsJumpRequested()) {
+                bool isExit      = navMap.IsLastJumpToExit();
                 pendingSectorIdx = navMap.GetTargetSector();
-                isJumping   = true;
-                jumpTimer   = JUMP_DURATION;
+                isJumping        = true;
+                jumpTimer        = JUMP_DURATION;
                 audio.PlaySfx("jump");
                 shipStats.fuel = std::max(0.0f, shipStats.fuel - 1.0f);
-                hud.PushNotification("FTL JUMP INITIATED", { 80, 180, 255, 255 });
+                if (isExit)
+                    hud.PushNotification("ZONE COMPLETE - NEXT SECTOR",
+                                         { 255, 200, 60, 255 });
+                else
+                    hud.PushNotification("FTL JUMP INITIATED",
+                                         { 80, 180, 255, 255 });
                 navMap.ResetJumpRequest();
-                // On désactive l'ennemi pendant le saut
                 enemy.active = false;
+                gameState    = GameState::IDLE;
+                currentEvent = EventType::NONE;
             }
         }
 
@@ -373,9 +385,29 @@ int main() {
             // Changement de secteur à mi-parcours (écran noir)
             if (jumpTimer <= JUMP_DURATION * 0.5f && pendingSectorIdx != -1) {
                 currentSectorIdx = pendingSectorIdx;
-                const Sector& s  = SECTORS[currentSectorIdx % SECTOR_COUNT];
+                const SectorDef& s  = SECTORS[currentSectorIdx % SECTOR_COUNT];
                 bg.SetSector(s.seed, s.c1, s.c2);
-                hud.PushNotification(s.name, { 200, 220, 255, 255 });
+
+                NodeEvent ne = navMap.GetLastJumpEvent();
+
+                if (navMap.IsLastJumpToExit()) {
+                    navMap.Regenerate((int)screenW, (int)screenH);
+                    hud.PushNotification(s.name, { 200, 220, 255, 255 });
+                    currentEvent = EventType::NONE;
+                } else {
+                    hud.PushNotification(s.name, { 200, 220, 255, 255 });
+                    switch (ne) {
+                        case NodeEvent::COMBAT:
+                            currentEvent = EventType::COMBAT; break;
+                        case NodeEvent::MERCHANT:
+                            currentEvent = EventType::MERCHANT; break;
+                        case NodeEvent::DERELICT:
+                            currentEvent = EventType::DERELICT;
+                            derelictPending = true; break;
+                        default:
+                            currentEvent = EventType::NONE; break;
+                    }
+                }
                 pendingSectorIdx = -1;
             }
 
@@ -383,15 +415,25 @@ int main() {
                 isJumping      = false;
                 flashAlpha     = 1.0f;
                 shakeIntensity = 15.0f;
-                enemySpawnTimer = 6.0f; // Respawn ennemi après arrivée
+                projMgr.Clear();
+
+                if (currentEvent == EventType::COMBAT) {
+                    SpawnEnemy(enemy, screenW, screenH);
+                    gameState = GameState::COMBAT;
+                    hud.PushNotification("ENEMY DETECTED", { 255, 80, 80, 255 });
+                } else if (currentEvent == EventType::MERCHANT) {
+                    shop.GenerateStock(navMap.GetZoneLevel());
+                    gameState = GameState::EVENT_SHIP;
+                    hud.PushNotification("MERCHANT VESSEL DETECTED",
+                                         { 80, 220, 80, 255 });
+                } else if (currentEvent == EventType::DERELICT) {
+                    gameState = GameState::EVENT_NONE;
+                } else {
+                    gameState = GameState::IDLE;
+                }
             }
         } else {
-            ftlTarget = IsKeyDown(KEY_SPACE) ? 1.0f : 0.0f;
-            if (IsKeyPressed(KEY_SPACE)) {
-                flashAlpha     = 1.0f;
-                shakeIntensity = 20.0f;
-                audio.PlaySfx("jump");
-            }
+            ftlTarget = 0.0f;
         }
 
         // ── FTL lerp (UNE seule mise à jour) ──────────────────────────────────
@@ -435,38 +477,45 @@ int main() {
         // ── Tir joueur ────────────────────────────────────────────────────────
         laserCooldown   -= dt;
         missileCooldown -= dt;
+        bigBulletCd     -= dt;
+        bulletCd        -= dt;
         float fireAngle  = shipRotation - 90.0f;
 
-        if (!navMap.IsActive() && !isJumping) {
+        const Item* equipped = inventory.GetEquippedWeapon();
+
+        if (!navMap.IsActive() && !isJumping && !shop.isOpen &&
+            gameState == GameState::COMBAT) {
+
             if (IsKeyDown(KEY_F) && laserCooldown <= 0) {
-                projMgr.Spawn(ProjType::LASER, shipPos, fireAngle);
-                laserCooldown = LASER_CD;
-                audio.PlaySfx("laser");
+                float cd  = equipped ? equipped->weapon.cooldown : 0.18f;
+                float dmg = equipped ? equipped->weapon.damage   : -1.0f;
+                ProjType pt = equipped ? equipped->weapon.projType : ProjType::LASER;
+                projMgr.Spawn(pt, shipPos, fireAngle, dmg);
+                laserCooldown = cd;
+                audio.PlaySfx(equipped ? equipped->weapon.sfxKey : "laser");
             }
             if (IsKeyPressed(KEY_G) && missileCooldown <= 0) {
                 projMgr.Spawn(ProjType::TORPEDO, shipPos, fireAngle);
                 missileCooldown = MISSILE_CD;
                 audio.PlaySfx("missile");
             }
-            if (IsKeyPressed(KEY_E)) {
+            if (IsKeyPressed(KEY_E) && bigBulletCd <= 0) {
                 projMgr.Spawn(ProjType::BIG_BULLET, shipPos, fireAngle);
+                bigBulletCd = 0.4f;
                 audio.PlaySfx(random_gun_sfx<5>("gun_").c_str());
             }
-            if (IsKeyPressed(KEY_SPACE)) {
+            if (IsKeyPressed(KEY_SPACE) && bulletCd <= 0) {
                 projMgr.Spawn(ProjType::BULLET, shipPos, fireAngle);
+                bulletCd = 0.2f;
                 audio.PlaySfx(random_gun_sfx<5>("gun_").c_str());
             }
         }
 
-        // ── Ennemi — spawn & update ───────────────────────────────────────────
-        if (!isJumping && ftlLerp < 0.1f) {
-            if (!enemy.active) {
-                enemySpawnTimer -= dt;
-                if (enemySpawnTimer <= 0.0f) {
-                    SpawnEnemy(enemy, screenW, screenH);
-                    hud.PushNotification("ENEMY DETECTED", { 255, 80, 80, 255 });
-                }
-            } else {
+        // ── Ennemi (combat uniquement) ────────────────────────────────────────
+        if (gameState == GameState::COMBAT && !isJumping && ftlLerp < 0.1f) {
+            if (enemy.active) {
+                // L'ennemi est fixe sur la droite du split-screen
+                enemy.pos = enemyFixedPos;
                 UpdateEnemy(enemy, shipPos, projMgr, dt, ftlLerp,
                             shakeIntensity, shipStats, hud);
 
@@ -476,12 +525,9 @@ int main() {
                     float dx = p.pos.x - enemy.pos.x;
                     float dy = p.pos.y - enemy.pos.y;
                     if (sqrtf(dx*dx + dy*dy) < 24.0f) {
-                        float dmg = (p.type == ProjType::TORPEDO)  ? 35.0f
-                                  : (p.type == ProjType::BIG_BULLET) ? 20.0f
-                                                                      : 10.0f;
-                        enemy.hull -= dmg;
+                        enemy.hull -= p.damage;
                         p.active    = false;
-                        shakeIntensity = std::max(shakeIntensity, dmg * 0.3f);
+                        shakeIntensity = std::max(shakeIntensity, p.damage * 0.3f);
 
                         // Particules d'impact
                         for (int i = 0; i < 8; i++) {
@@ -496,9 +542,17 @@ int main() {
                         }
 
                         if (enemy.hull <= 0.0f) {
-                            enemy.active    = false;
-                            enemySpawnTimer = 10.0f + randf() * 5.0f;
-                            hud.PushNotification("ENEMY DESTROYED", { 80, 255, 120, 255 });
+                            enemy.active = false;
+                            gameState    = GameState::IDLE;
+                            currentEvent = EventType::NONE;
+
+                            int zoneBonus = navMap.GetZoneLevel() * 20;
+                            int reward    = randi(40 + zoneBonus, 120 + zoneBonus);
+                            economy.Earn(reward);
+                            char rbuf[48];
+                            snprintf(rbuf, sizeof(rbuf),
+                                     "ENEMY DESTROYED  +%d CR", reward);
+                            hud.PushNotification(rbuf, { 80, 255, 120, 255 });
                             shakeIntensity = std::max(shakeIntensity, 12.0f);
                             flashAlpha = 0.3f;
                         }
@@ -507,16 +561,20 @@ int main() {
 
                 // Collision projectiles ennemi → joueur
                 for (auto& p : projMgr.GetAllMutable()) {
-                    if (!p.active || !p.isEnemy) continue; 
+                    if (!p.active || !p.isEnemy) continue;
                     float dx = p.pos.x - shipX;
                     float dy = p.pos.y - shipY;
                     if (sqrtf(dx*dx + dy*dy) < 28.0f) {
-                        shipStats.TakeDamage(12.0f);
+                        shipStats.TakeDamage(p.damage);
                         p.active = false;
                         shakeIntensity = std::max(shakeIntensity, 6.0f);
-                        hud.PushNotification("-12 HIT", { 255, 80, 80, 255 });
+                        char hitbuf[24];
+                        snprintf(hitbuf, sizeof(hitbuf), "-%.0f HIT", p.damage);
+                        hud.PushNotification(hitbuf, { 255, 80, 80, 255 });
                     }
                 }
+            } else {
+                gameState = GameState::IDLE;
             }
         }
 
@@ -581,7 +639,7 @@ int main() {
 
                 BeginMode2D(camera);
 
-                    // Étoiles + glow flouté
+                    // Étoiles
                     for (int i = 0; i < STARS; i++) {
                         if (ftlLerp > 0.1f) {
                             float streakLen = 15.0f * stars[i].z * ftlLerp;
@@ -597,7 +655,7 @@ int main() {
                         }
                     }
 
-                    // Glow layer flou (shader appliqué ici)
+                    // Glow layer flou
                     BeginShaderMode(blurShader);
                         DrawTextureRec(
                             glowTarget.texture,
@@ -613,8 +671,17 @@ int main() {
                                     ColorAlpha(p.color, p.life));
                     }
 
-                    // Ennemi
+                    // Ennemi (combat)
                     DrawEnemy(enemy, t);
+
+                    // Vaisseau marchand (placeholder géométrique)
+                    if (gameState == GameState::EVENT_SHIP &&
+                        currentEvent == EventType::MERCHANT) {
+                        DrawPoly(enemyFixedPos, 6, 24.0f, t * 10.0f,
+                                 { 80, 220, 80, 200 });
+                        DrawPolyLines(enemyFixedPos, 6, 24.0f, t * 10.0f,
+                                      { 100, 255, 100, 255 });
+                    }
 
                     // Moteur joueur
                     if (engineTex.id > 0) {
@@ -665,23 +732,65 @@ int main() {
 
                 EndMode2D();
 
-                // Flash blanc (hors camera shake)
+                // Flash blanc
                 if (flashAlpha > 0.0f)
                     DrawRectangle(0, 0, (int)screenW, (int)screenH,
                                   ColorAlpha(WHITE, flashAlpha));
 
-                // HUD
+                // ── Séparateur split-screen (fade si pas de split) ────────────
+                if (splitFactor > 0.05f) {
+                    float midX  = screenW * 0.5f;
+                    float alpha = std::min(splitFactor * 2.0f, 1.0f);
+                    DrawRectangle((int)midX - 1, 0, 2, (int)screenH,
+                                  ColorAlpha({ 40, 70, 120, 100 }, alpha));
+                    DrawRectangleGradientH(
+                        (int)midX, 0, (int)(screenW * 0.12f), (int)screenH,
+                        ColorAlpha({ 0, 0, 10, 80 }, alpha),
+                        ColorAlpha({ 0, 0, 0, 0 }, alpha));
+                }
+
+                // ── HUD joueur ────────────────────────────────────────────────
                 hud.Draw(shipStats, (int)screenW, (int)screenH);
+                hud.DrawCredits(economy.credits, (int)screenW, (int)screenH);
 
-                // Debug / contrôles
-                DrawTextEx(hud.GetFont(), "F: Laser  G: Torpedo  E: BigBullet",
-                           { 20, 20 }, 16, 1, { 160, 170, 190, 160 });
-                DrawTextEx(hud.GetFont(), "ESPACE: FTL  TAB: Map",
-                           { 20, 42 }, 16, 1, { 160, 170, 190, 160 });
-                DrawTextEx(hud.GetFont(), "H/J/K: Dégâts (test)",
-                           { 20, 64 }, 16, 1, { 100, 110, 130, 120 });
+                // ── HUD ennemi ────────────────────────────────────────────────
+                if (enemy.active && gameState == GameState::COMBAT) {
+                    ShipStats enemyHudStats;
+                    enemyHudStats.hull      = enemy.hull;
+                    enemyHudStats.maxHull   = 100.0f;
+                    enemyHudStats.shield    = 0.0f;
+                    enemyHudStats.maxShield = 1.0f;
+                    enemyHudStats.fuel      = 0.0f;
+                    enemyHudStats.maxFuel   = 1.0f;
+                    hud.DrawForEnemy(enemyHudStats, (int)screenW, (int)screenH);
+                }
 
-                // Indicateur de saut
+                // ── Event overlay marchand ────────────────────────────────────
+                if (!shop.isOpen && gameState == GameState::EVENT_SHIP &&
+                    currentEvent == EventType::MERCHANT) {
+                    hud.DrawEventBox("MERCHANT VESSEL",
+                                     "A friendly ship hails you.",
+                                     (int)screenW, (int)screenH);
+                }
+
+                // ── Contrôles ─────────────────────────────────────────────────
+                DrawTextEx(hud.GetFont(),
+                           "F: Fire  G: Torpedo  E: BigShot  SPACE: Bullet",
+                           { 20, 20 }, 14, 1, { 160, 170, 190, 130 });
+                DrawTextEx(hud.GetFont(),
+                           "TAB: Map  B: Shop (merchant)",
+                           { 20, 38 }, 14, 1, { 160, 170, 190, 130 });
+
+                // Arme équipée
+                if (equipped) {
+                    char ewBuf[80];
+                    snprintf(ewBuf, sizeof(ewBuf), "EQUIPPED: %s",
+                             equipped->name.c_str());
+                    DrawTextEx(hud.GetFont(), ewBuf, { 20, 56 }, 13, 1,
+                               Item::RarityColor(equipped->rarity));
+                }
+
+                // ── Indicateur de saut ────────────────────────────────────────
                 if (isJumping) {
                     const char* jumpTxt = "FTL JUMP IN PROGRESS...";
                     float tw = MeasureTextEx(hud.GetFont(), jumpTxt, 20, 1).x;
@@ -691,16 +800,25 @@ int main() {
                                20, 1, ColorAlpha(SKYBLUE, pulse));
                 }
 
-                // Nom du secteur courant (bas droite)
+                // ── Secteur + zone courants ────────────────────────────────────
                 const char* sName = SECTORS[currentSectorIdx % SECTOR_COUNT].name;
-                float snw = MeasureTextEx(hud.GetFont(), sName, 14, 1).x;
-                DrawTextEx(hud.GetFont(), sName,
-                           { screenW - snw - 16.0f, screenH - 30.0f },
+                char zoneLabel[48];
+                snprintf(zoneLabel, sizeof(zoneLabel), "%s  [Zone %d]",
+                         sName, navMap.GetZoneLevel() + 1);
+                float snw = MeasureTextEx(hud.GetFont(), zoneLabel, 14, 1).x;
+                DrawTextEx(hud.GetFont(), zoneLabel,
+                           { (screenW - snw) * 0.5f, screenH - 24.0f },
                            14, 1, { 120, 140, 180, 140 });
 
             } else {
+                navMap.SetFuelInfo((int)shipStats.fuel, (int)shipStats.maxFuel);
                 navMap.Draw(hud.GetFont());
             }
+
+            // ── Shop overlay ──────────────────────────────────────────────────
+            if (shop.isOpen)
+                shop.Draw(hud.GetFont(), economy, inventory,
+                          (int)screenW, (int)screenH);
 
         EndDrawing();
     }

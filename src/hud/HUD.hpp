@@ -18,6 +18,10 @@ public:
     void LoadFont(const char* path, int size = 20);
     void Update(float dt, const ShipStats& stats);
     void Draw(const ShipStats& stats, int screenW, int screenH) const;
+    void DrawForEnemy(const ShipStats& stats, int screenW, int screenH) const;
+    void DrawCredits(int credits, int screenW, int screenH) const;
+    void DrawEventBox(const char* title, const char* body,
+                      int screenW, int screenH) const;
     void PushNotification(const std::string& text, Color color = WHITE);
     void Unload();
     Font GetFont() const { return _font; }
@@ -38,7 +42,7 @@ private:
     void _DrawBar(Vector2 pos, float w, float h,
                   float pct, Color fill, Color bg,
                   const char* label, float labelSize) const;
-    void _DrawFuelPips(Vector2 pos, int current, int max) const;
+    void _DrawFuelPips(Vector2 pos, int current, int max, float totalW) const;
     void _DrawShipStatus(Vector2 pos, const ShipStats& stats) const;
     void _DrawText(const char* text, Vector2 pos,
                    float size, Color color) const;
