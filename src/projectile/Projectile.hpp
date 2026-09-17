@@ -6,7 +6,8 @@ enum class ProjType {
     BIG_BULLET,
     LASER,
     TORPEDO,
-    WAVE
+    WAVE,
+    ROCK     // astéroïde (danger de balise)
 };
 
 struct Projectile {
@@ -15,7 +16,13 @@ struct Projectile {
     Vector2  vel;
     float    rotation;
     float    life;
-    bool     active;
-    bool     isEnemy = false;
-    float    damage  = 10.0f;  // Dégâts sur impact
+    bool     active    = true;
+    bool     isEnemy   = false;
+
+    // Ciblage : le projectile s'immobilise sur `target` et lève `arrived`.
+    // C'est au combat de décider de la suite (impact, bouclier, raté…).
+    bool     hasTarget = false;
+    bool     arrived   = false;
+    Vector2  target    = { 0, 0 };
+    int      shotId    = -1;
 };

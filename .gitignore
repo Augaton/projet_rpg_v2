@@ -36,3 +36,6 @@ ftl_game
 *.pch
 *.dSYM
 *.dSYM.zip
+build/
+userdata/
+bin/ftl_game_*

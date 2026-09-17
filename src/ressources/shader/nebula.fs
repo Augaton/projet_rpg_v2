@@ -10,6 +10,16 @@ uniform float iImpact;    // Flash blanc lors des dégâts
 uniform float iSeed;      // Graine du secteur
 uniform vec3  iColorPrimary;
 uniform vec3  iColorSecondary;
+uniform float iLevels;    // > 0 : quantification + tramage ordonné (rendu rétro)
+
+// Matrice de Bayer 4x4
+float bayer4(vec2 p) {
+    int x = int(mod(p.x, 4.0));
+    int y = int(mod(p.y, 4.0));
+    const float m[16] = float[16](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0,
+                                  3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
+    return m[x + y * 4] / 16.0;
+}
 
 // --- UTILS PROCÉDURAUX ---
 float hash(vec2 p) {
@@ -78,6 +88,11 @@ void main() {
 
     // Effet d'impact (flash blanc)
     finalRGB += vec3(iImpact * 0.3);
+
+    // Palette réduite tramée : chaque pixel basse résolution devient un "gros pixel"
+    if (iLevels > 0.0) {
+        finalRGB = floor(finalRGB * iLevels + bayer4(gl_FragCoord.xy)) / iLevels;
+    }
 
     finalColor = vec4(finalRGB, 1.0);
 }

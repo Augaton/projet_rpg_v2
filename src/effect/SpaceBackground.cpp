@@ -1,4 +1,5 @@
 #include "SpaceBackground.hpp"
+#include "../core/Config.hpp"
 #include <algorithm>
 
 SpaceBackground::SpaceBackground() : time(0.0f), ftlLerp(0.0f), impactAnim(0.0f) {}
@@ -14,6 +15,7 @@ void SpaceBackground::Load(const char* shaderPath) {
     seedLoc   = GetShaderLocation(shader, "iSeed");
     col1Loc   = GetShaderLocation(shader, "iColorPrimary");
     col2Loc   = GetShaderLocation(shader, "iColorSecondary");
+    levelsLoc = GetShaderLocation(shader, "iLevels");
 
     Image white = GenImageColor(1, 1, WHITE);
     whiteTex = LoadTextureFromImage(white);
@@ -22,6 +24,7 @@ void SpaceBackground::Load(const char* shaderPath) {
 
 void SpaceBackground::SetSector(float seed, Color c1, Color c2) {
     currentSeed = seed;
+    _dirty = true;
     color1 = {(float)c1.r/255.0f, (float)c1.g/255.0f, (float)c1.b/255.0f};
     color2 = {(float)c2.r/255.0f, (float)c2.g/255.0f, (float)c2.b/255.0f};
 }
@@ -32,7 +35,7 @@ void SpaceBackground::Update(float dt, float ftlTarget, bool impacted) {
     if (impacted) impactAnim = 1.0f;
     impactAnim = std::max(0.0f, impactAnim - 4.0f * dt);
 
-    float res[2] = { (float)GetScreenWidth(), (float)GetScreenHeight() };
+    float res[2] = { (float)VIRTUAL_W, (float)VIRTUAL_H };
     
     SetShaderValue(shader, timeLoc,   &time,        SHADER_UNIFORM_FLOAT);
     SetShaderValue(shader, resLoc,    res,          SHADER_UNIFORM_VEC2);
@@ -41,6 +44,7 @@ void SpaceBackground::Update(float dt, float ftlTarget, bool impacted) {
     SetShaderValue(shader, seedLoc, &currentSeed, SHADER_UNIFORM_FLOAT);
     SetShaderValue(shader, col1Loc, &color1, SHADER_UNIFORM_VEC3);
     SetShaderValue(shader, col2Loc, &color2, SHADER_UNIFORM_VEC3);
+    SetShaderValue(shader, levelsLoc, &_levels, SHADER_UNIFORM_FLOAT);
 }
 void SpaceBackground::Draw(int screenWidth, int screenHeight) {
     BeginShaderMode(shader);
