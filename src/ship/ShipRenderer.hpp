@@ -46,5 +46,4 @@ private:
     Visual _visuals[HULL_COUNT];
 
     void _DrawFrame(const Sheet& s, int frame, const ShipView& view, float scale, Color tint) const;
-    static void _DrawIcon(int sys, Vector2 c, Color color);
 };

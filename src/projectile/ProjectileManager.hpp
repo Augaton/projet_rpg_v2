@@ -21,7 +21,6 @@ public:
     void Clear();
 
     std::vector<Projectile>&       GetAllMutable() { return _proj; }
-    const std::vector<Projectile>& GetAll() const  { return _proj; }
 
 private:
     static constexpr size_t MAX_PROJECTILES = 256;

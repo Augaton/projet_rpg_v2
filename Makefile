@@ -2,6 +2,7 @@
 #   make          build optimisé et durci      -> bin/ftl_game
 #   make debug    UBSan (trap) + conteneurs vérifiés -> bin/ftl_game_debug
 #   make asan     ASan + UBSan (nécessite libasan/libubsan) -> bin/ftl_game_asan
+#   make test     tests unitaires (options debug)            -> bin/tests
 #   make run / make clean
 
 CXX       = g++
@@ -19,8 +20,12 @@ OBJ_ASAN  = $(patsubst src/%.cpp,build/asan/%.o,$(SRC))
 BIN       = bin/ftl_game
 BIN_DBG   = bin/ftl_game_debug
 BIN_ASAN  = bin/ftl_game_asan
+# Tests : objets debug du jeu (sauf main) + tests/*.cpp
+TEST_SRC  = $(wildcard tests/*.cpp)
+OBJ_TEST  = $(patsubst tests/%.cpp,build/tests/%.o,$(TEST_SRC)) $(filter-out build/debug/main.o,$(OBJ_DBG))
+BIN_TEST  = bin/tests
 
-.PHONY: all debug asan clean run
+.PHONY: all debug asan test clean run
 
 all: $(BIN)
 
@@ -36,6 +41,13 @@ $(BIN_DBG): $(OBJ_DBG)
 	@mkdir -p $(dir $@)
 	$(CXX) $(COMMON) $(DEBUG) -o $@ $^ $(LIBS)
 
+test: $(BIN_TEST)
+	./$(BIN_TEST)
+
+$(BIN_TEST): $(OBJ_TEST)
+	@mkdir -p $(dir $@)
+	$(CXX) $(COMMON) $(DEBUG) -o $@ $^ $(LIBS)
+
 $(BIN_ASAN): $(OBJ_ASAN)
 	@mkdir -p $(dir $@)
 	$(CXX) $(COMMON) $(ASAN) -o $@ $^ $(LIBS)
@@ -48,6 +60,10 @@ build/debug/%.o: src/%.cpp
 	@mkdir -p $(dir $@)
 	$(CXX) $(COMMON) $(DEBUG) -c $< -o $@
 
+build/tests/%.o: tests/%.cpp
+	@mkdir -p $(dir $@)
+	$(CXX) $(COMMON) $(DEBUG) -Isrc -c $< -o $@
+
 build/asan/%.o: src/%.cpp
 	@mkdir -p $(dir $@)
 	$(CXX) $(COMMON) $(ASAN) -c $< -o $@
@@ -56,6 +72,6 @@ run: all
 	./$(BIN)
 
 clean:
-	rm -rf build $(BIN) $(BIN_DBG) $(BIN_ASAN)
+	rm -rf build $(BIN) $(BIN_DBG) $(BIN_ASAN) $(BIN_TEST)
 
--include $(OBJ_REL:.o=.d) $(OBJ_DBG:.o=.d) $(OBJ_ASAN:.o=.d)
+-include $(OBJ_REL:.o=.d) $(OBJ_DBG:.o=.d) $(OBJ_ASAN:.o=.d) $(OBJ_TEST:.o=.d)

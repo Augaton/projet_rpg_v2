@@ -3,8 +3,9 @@
 Traversez 4 secteurs hostiles, gérez l'énergie de votre vaisseau, semez la flotte rebelle
 et abattez le vaisseau amiral qui vous attend au bout du voyage.
 
-Style rétro « brut » (police pixel, blocs à angles vifs, écran cathodique) sur une chaîne
-de rendu moderne (shaders, bloom, post-traitement).
+Style « rétro net » (consoles à coins coupés sur noir chaud, titres en Chakra Petch, icônes pixel-art, logo chromé, écran cathodique)
+sur une chaîne de rendu moderne (shaders, bloom, post-traitement). Chaque balise a son
+fond : nébuleuse, soleil hors champ et parfois une planète, générés par shader.
 
 ## Compiler et lancer
 
@@ -17,6 +18,7 @@ de rendu moderne (shaders, bloom, post-traitement).
 | `make run` | compile puis lance le jeu |
 | `make debug` | UBSan (mode trap) + conteneurs vérifiés → `bin/ftl_game_debug` |
 | `make asan` | AddressSanitizer + UBSan (paquets `libasan` et `libubsan` requis) → `bin/ftl_game_asan` |
+| `make test` | tests unitaires (sauvegarde, carte, énergie, armes), avec les vérifications debug → `bin/tests` |
 | `make clean` | nettoie |
 
 Le binaire retrouve seul le dossier `asset/` : il peut être lancé depuis n'importe où.
@@ -42,7 +44,7 @@ Le binaire retrouve seul le dossier `asset/` : il peut être lancé depuis n'imp
 | Vitesse du combat ×1 / ×2 / ×4 | TAB ou boutons en haut |
 | Carte du secteur / saut FTL d'urgence | J (aussi depuis le résultat d'un événement) |
 | Passer l'animation de saut | clic / ESPACE |
-| Sauter vers une balise | clic, ou 1-9 sur la carte |
+| Sauter vers une balise | clic sur la carte, ou 1-9 pour choisir puis Entrée (ou le même chiffre) |
 | Acheter par 5 | Maj + clic au magasin |
 | Menus | flèches + Entrée, ou souris |
 | Annuler, fermer, menu pause | ÉCHAP |
@@ -53,7 +55,10 @@ Le binaire retrouve seul le dossier `asset/` : il peut être lancé depuis n'imp
 - **Réacteur & systèmes** : BOUCLIERS (2 barres = 1 couche), MOTEURS (esquive + charge FTL),
   ARMES, RÉPARATION (répare les systèmes en combat).
 - **Armes** : elles se chargent quand elles sont alimentées et tirent sur leur cible.
-  Les lasers sont bloqués par les boucliers, les missiles les traversent, l'ion les désactive.
+  Les lasers sont bloqués par les boucliers, les missiles les traversent, l'ion les désactive,
+  les armes perforantes passent tant que le bouclier n'a pas plus de couches qu'elles n'en percent.
+  Treize armes : lasers (basique, rafales I à III, lourd, perforant), canons (impulsion, double),
+  ions (canon, ion lourd), missiles (Artemis, Hermes, Pégase).
 - **Temps** : chronomètre de combat et vitesse ×1/×2/×4 (simulation à pas fixe, identique à toutes les vitesses).
 - **FTL** : en présence d'un ennemi, le propulseur se recharge lentement (~31 s avec 2 barres de moteurs).
 - **Fuite ennemie** : un ennemi en mauvaise posture annonce son intention de fuir 6 s à l'avance,
@@ -72,6 +77,7 @@ Le binaire retrouve seul le dossier `asset/` : il peut être lancé depuis n'imp
   les capteurs révèlent le type des balises voisines.
 - **Réparation en combat** : l'équipage répare toujours lentement, le système de réparation accélère.
 - **Magasin** : ressources, armes et nouveaux modules ; l'énergie libre est assignée automatiquement.
+  Au survol, une arme est comparée à l'arme équipée du même rôle (énergie, recharge, dégâts / 10 s).
 - **Vaisseaux jouables** : AUGATON (polyvalent), VIPÈRE (intercepteur furtif, débloqué en atteignant le secteur 3),
   BASTION (croiseur lourd, débloqué après 20 destructions ou une victoire). Choix du vaisseau et de la difficulté
   (Facile / Normal / Difficile) en début de partie.
@@ -103,7 +109,8 @@ mais ce n'est pas une signature : un joueur déterminé peut toujours modifier s
 ```
 src/
   main.cpp              point d'entrée
-  game/Game             machine à états, menus, paramètres, reprise
+  game/Game             boucle, machine à états, flux de partie, composition de l'image
+  game/GameScreens      rendu des écrans : menus, balise, événements, paramètres, aide, tutoriel
   game/SaveGame         sauvegarde texte validée (v3, compatible v1/v2)
   game/Profile          progression : records, historique, déblocages
   combat/Combat         tirs, boucliers, esquive, IA, destruction, fuite
@@ -117,10 +124,17 @@ src/
   effect/               nébuleuse, étoiles, particules
   core/                 UI (style + navigation clavier), paramètres, chemins, aléatoire
   ressources/shader/    nebula.fs, bloom.fs, crt.fs
+tests/test_main.cpp     tests unitaires (make test)
+tools/gen_ui_assets.py  génère asset/ui/icons.png et asset/ui/logo.png (Pillow requis)
 ```
+
+Les icônes et le logo sont dessinés en pixel-art dans `tools/gen_ui_assets.py` ;
+les PNG sont versionnés, le script ne sert qu'à les modifier
+(`python3 tools/gen_ui_assets.py` depuis la racine).
 
 ## Crédits
 
 - Sprites : pack *Kla'ed* (Foozle).
+- Icônes d'interface et logo : originaux, générés par `tools/gen_ui_assets.py`.
 - Police : Source Code Pro (Adobe), sous licence SIL Open Font License (`asset/fonts/SourceCodePro-LICENSE.md`).
-- Police pixel : police par défaut de raylib.
+- Police des titres : Chakra Petch (Cadson Demak), sous licence SIL Open Font License (`asset/fonts/ChakraPetch-LICENSE.txt`).

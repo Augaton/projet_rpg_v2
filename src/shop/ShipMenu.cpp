@@ -42,9 +42,9 @@ void ShipMenu::Draw(Ship& s, HUD& hud, AudioManager& audio, float /*t*/) {
     // ── Réacteur ─────────────────────────────────────────────────────────────
     {
         Rectangle r = { PANEL.x + 20, PANEL.y + 90, PANEL.width - 40, 56 };
-        DrawRectangleRec(r, ColorAlpha(C_INK, 0.5f));
-        DrawRectangleRec({ r.x, r.y, 3, r.height }, C_POWER);
-        Label("REACTEUR", r.x + 16, r.y + 10, 20, C_TEXT);
+        Bevel(r, 10, ColorAlpha(C_PANEL_2, 0.95f));
+        DrawRectangleRec({ r.x + 10, r.y, r.width - 10, 2 }, C_POWER);
+        Label("RÉACTEUR", r.x + 16, r.y + 10, 20, C_TEXT);
         Text(TextFormat("Énergie totale %d  ·  libre %d", s.reactor, s.FreePower()), r.x + 16, r.y + 34, 13, C_LABEL);
 
         const int maxReactor = 25;
@@ -81,12 +81,12 @@ void ShipMenu::Draw(Ship& s, HUD& hud, AudioManager& audio, float /*t*/) {
         if (Hover(r)) hovered = sys;
         Color accent = installed ? C_ACCENT : C_BORDER;
 
-        DrawRectangleRec(r, ColorAlpha(C_INK, installed ? 0.55f : 0.3f));
-        DrawRectangleLinesEx(r, hovered == sys ? 2.0f : 1.0f, ColorAlpha(accent, installed ? 0.8f : 0.5f));
-        DrawRectangleRec({ r.x, r.y, 3, r.height }, accent);
+        Bevel(r, 10, ColorAlpha(C_PANEL_2, installed ? 0.95f : 0.5f));
+        if (hovered == sys) BevelLines(r, 10, accent, 2.0f);
+        DrawRectangleRec({ r.x + 10, r.y, r.width - 10, 2 }, ColorAlpha(accent, installed ? 1.0f : 0.5f));
 
         Label(SystemName(sys), r.x + 16, r.y + 12, 20, installed ? C_TEXT : C_TEXT_DIM);
-        if (!SystemUsesPower(sys)) Label("SANS ENERGIE", r.x + 16 + MeasureLabel(SystemName(sys), 20) + 12, r.y + 17, 10, C_TEXT_DIM);
+        if (!SystemUsesPower(sys)) Label("SANS ÉNERGIE", r.x + 16 + MeasureLabel(SystemName(sys), 20) + 12, r.y + 17, 10, C_TEXT_DIM);
 
         // Niveaux
         for (int i = 0; i < maxL; i++) {

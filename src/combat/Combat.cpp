@@ -509,6 +509,8 @@ CombatResult Combat::_Step(float h) {
 
     _proj->Update(h);
     _ResolveArrivals();
+    if (playerAlive) _EmitDamageFx(player, *_playerView, h);
+    if (enemyAlive)  _EmitDamageFx(_enemy, _enemyView, h);
 
     // Transitions de phase du vaisseau amiral
     if (enemyAlive && playerAlive && IsBoss() && !_enemy.Destroyed()) {
@@ -545,6 +547,30 @@ CombatResult Combat::_Step(float h) {
             return CombatResult::ENEMY_DESTROYED;
     }
     return CombatResult::ONGOING;
+}
+
+// Dégâts visibles : fumée sur les salles touchées, étincelles quand le système est hors service,
+// coque qui fume sous 50 %. Émis en temps simulé : rien en pause, plus vite en accéléré.
+void Combat::_EmitDamageFx(const Ship& ship, const ShipView& view, float h) {
+    for (int s = 0; s < SYS_COUNT; s++) {
+        const ShipSystem& x = ship.sys[s];
+        if (!x.Installed() || x.damage <= 0 || !SystemIsRoom(s)) continue;
+        Vector2 c = _renderer->RoomPos(ship, view, s);
+        c.x += view.kick.x + rng::Float(-6.0f, 6.0f);
+        c.y += view.kick.y + rng::Float(-6.0f, 6.0f);
+        float severity = (float)x.damage / (float)x.level;
+        if (rng::Chance(h * (2.0f + 4.0f * severity)))
+            _fx->Smoke(c, 8.0f, 1.4f);
+        if (x.damage >= x.level && rng::Chance(h * 2.5f))
+            _fx->Spark(c, { 255, 160, 70, 255 }, 4, 140.0f, 2.0f, 0.3f);
+    }
+
+    float hullPct = (float)ship.hull / (float)std::max(1, ship.maxHull);
+    if (hullPct < 0.5f && rng::Chance(h * (0.5f - hullPct) * 8.0f)) {
+        float r = _renderer->Size(ship) * 0.25f;
+        _fx->Smoke({ view.pos.x + view.kick.x + rng::Float(-r, r), view.pos.y + view.kick.y + rng::Float(-r, r) },
+                   11.0f, 1.8f);
+    }
 }
 
 void Combat::_EnterBossPhase(int phase) {
@@ -833,8 +859,8 @@ void Combat::_ResolveArrivals() {
                 _proj->Release(p);
                 continue;
             }
-            // Boucliers (les missiles passent)
-            if (!def.missile && target.shieldLayers > 0) {
+            // Boucliers : les missiles passent, les armes perforantes traversent jusqu'à `pierce` couches
+            if (!def.missile && target.shieldLayers > def.pierce) {
                 target.shieldLayers--;
                 target.shieldCharge = 0.0f;
                 if (def.ion > 0)
@@ -1041,12 +1067,13 @@ void Combat::DrawOverlay(float t) const {
     if (!_active) return;
 
     // Vitesse de jeu + chronomètre
+    ui::Console({ SpeedButtonRect(0).x - 6, 12, 162, 66 }, ui::C_ACCENT);
     for (int i = 0; i < 3; i++) {
         Rectangle r = SpeedButtonRect(i);
         bool on    = i == _speedIdx;
         bool hover = CheckCollisionPointRec(GetMousePosition(), r);
-        DrawRectangleRec(r, on ? ui::C_ACCENT : ColorAlpha(ui::C_INK, hover ? 0.8f : 0.5f));
-        DrawRectangleLinesEx(r, 1.0f, on ? ui::C_ACCENT : ColorAlpha(ui::C_ACCENT, hover ? 0.9f : 0.4f));
+        ui::Bevel(r, 5, on ? ui::C_ACCENT : ColorAlpha(ui::C_INK, hover ? 0.8f : 0.5f));
+        ui::BevelLines(r, 5, on ? ui::C_ACCENT : ColorAlpha(ui::C_ACCENT, hover ? 0.9f : 0.4f));
         ui::LabelCentered(TextFormat("x%d", SPEEDS[i]), r.x + r.width / 2, r.y + 8, 10, on ? ui::C_INK : ui::C_TEXT);
     }
     int secs = (int)_elapsed;
@@ -1066,7 +1093,7 @@ void Combat::DrawOverlay(float t) const {
         }
         if (_hazard == BeaconHazard::SOLAR_FLARE && _hazardTimer < 4.0f && _enemyDeathT < 0.0f && _playerDeathT < 0.0f) {
             bool blink = std::fmod(t, 0.4f) < 0.25f;
-            ui::LabelCentered(TextFormat("ERUPTION DANS %.0f", std::ceil(_hazardTimer)), VIRTUAL_W / 2.0f, 196, 30,
+            ui::LabelCentered(TextFormat("ÉRUPTION DANS %.0f", std::ceil(_hazardTimer)), VIRTUAL_W / 2.0f, 196, 30,
                               blink ? ui::C_MISSILE : ui::C_WARNING);
         }
     }
@@ -1084,20 +1111,21 @@ void Combat::DrawOverlay(float t) const {
         Color c      = i == 0 ? ui::C_SHIELD : ui::C_ION;
         bool hover   = CheckCollisionPointRec(GetMousePosition(), r);
 
-        DrawRectangleRec(r, ColorAlpha(ui::C_INK, 0.6f));
+        ui::Bevel(r, 6, ColorAlpha(ui::C_INK, 0.7f));
         if (i == 0 && p.Cloaked())
-            DrawRectangleRec({ r.x, r.y, r.width * (p.cloakTimer / p.CloakDuration()), r.height }, ColorAlpha(c, 0.45f));
+            DrawRectangleRec({ r.x + 6, r.y + 2, (r.width - 12) * (p.cloakTimer / p.CloakDuration()), r.height - 4 }, ColorAlpha(c, 0.45f));
         else if (cd > 0.0f)
-            DrawRectangleRec({ r.x, r.y + r.height - 4, r.width * (1.0f - std::min(1.0f, cd / 22.0f)), 4 }, ColorAlpha(c, 0.6f));
-        if (active && i == 1) DrawRectangleRec(r, ColorAlpha(c, 0.3f + 0.2f * std::sin(t * 10.0f)));
-        DrawRectangleLinesEx(r, ready || active ? 2.0f : 1.0f, ColorAlpha(c, powered ? (hover ? 1.0f : 0.8f) : 0.35f));
+            DrawRectangleRec({ r.x + 6, r.y + r.height - 5, (r.width - 12) * (1.0f - std::min(1.0f, cd / 22.0f)), 3 }, ColorAlpha(c, 0.6f));
+        if (active && i == 1) ui::Bevel(r, 6, ColorAlpha(c, 0.3f + 0.2f * std::sin(t * 10.0f)));
+        ui::BevelLines(r, 6, ColorAlpha(c, powered ? (hover ? 1.0f : 0.8f) : 0.35f), ready || active ? 2.0f : 1.0f);
 
-        ui::Label(i == 0 ? "INVIS. [C]" : "PIRATAGE [H]", r.x + 8, r.y + 5, 10, powered ? ui::C_TEXT : ui::C_TEXT_DIM);
+        ui::DrawIcon(sys, { r.x + 16, r.y + r.height / 2 }, 1.0f, powered ? c : ui::C_TEXT_DIM);
+        ui::Label(i == 0 ? "INVIS. [C]" : "PIRATAGE [H]", r.x + 30, r.y + 5, 10, powered ? ui::C_TEXT : ui::C_TEXT_DIM);
         const char* st = !powered ? "HORS TENSION"
                        : (i == 0 && p.Cloaked()) ? TextFormat("ACTIF %.0fs", p.cloakTimer)
                        : active ? "CHOISIR SALLE"
                        : cd > 0.0f ? TextFormat("RECHARGE %.0fs", cd) : "PRÊT";
-        ui::Label(st, r.x + 8, r.y + 17, 10, ready ? c : ui::C_TEXT_DIM);
+        ui::Label(st, r.x + 30, r.y + 17, 10, ready ? c : ui::C_TEXT_DIM);
     }
     if (_hackSelecting) {
         Vector2 m = GetMousePosition();
@@ -1110,16 +1138,18 @@ void Combat::DrawOverlay(float t) const {
         Rectangle r = AutoTargetRect();
         bool hover = CheckCollisionPointRec(GetMousePosition(), r);
         bool nag   = _idleReady > 2.5f && std::fmod(t, 0.6f) < 0.35f;
-        DrawRectangleRec(r, hover || nag ? ui::C_ENEMY : ColorAlpha(ui::C_INK, 0.55f));
-        DrawRectangleLinesEx(r, 1.0f, ui::C_ENEMY);
-        ui::LabelCentered("AUTO [T]", r.x + r.width / 2, r.y + 10, 10, hover || nag ? ui::C_INK : ui::C_TEXT);
+        ui::Bevel({ r.x + 3, r.y + 3, r.width, r.height }, 7, ColorAlpha(BLACK, 0.35f));
+        ui::Bevel(r, 7, hover || nag ? ui::C_ENEMY : ColorAlpha(ui::C_INK, 0.7f));
+        ui::BevelLines(r, 7, ui::C_ENEMY, hover || nag ? 2.0f : 1.0f);
+        ui::DrawIcon(ui::ICON_WEAPONS, { r.x + 18, r.y + r.height / 2 }, 1.0f, hover || nag ? ui::C_INK : ui::C_ENEMY);
+        ui::LabelCentered("AUTO [T]", r.x + r.width / 2 + 10, r.y + 10, 10, hover || nag ? ui::C_INK : ui::C_TEXT);
     }
     if (_idleReady > 2.5f && !_paused) {
         const char* msg = "Arme prête sans cible : [T] ciblage auto, ou clic sur une salle ennemie";
         float w = ui::Measure(msg, 15) + 28;
         Rectangle r = { (VIRTUAL_W - w) / 2.0f, 236, w, 28 };
-        DrawRectangleRec(r, ColorAlpha(ui::C_INK, 0.8f));
-        DrawRectangleRec({ r.x, r.y, 3, r.height }, ui::C_ENEMY);
+        ui::Bevel(r, 6, ColorAlpha(ui::C_INK, 0.85f));
+        DrawRectangleRec({ r.x + 2, r.y + 6, 3, r.height - 12 }, ui::C_ENEMY);
         ui::Text(msg, r.x + 14, r.y + 6, 15, std::fmod(t, 0.8f) < 0.5f ? ui::C_TEXT : ui::C_ENEMY);
     }
 
@@ -1134,7 +1164,7 @@ void Combat::DrawOverlay(float t) const {
         // Seuils de phase sur la barre de coque ennemie
         for (int k = 1; k <= 2; k++) {
             float x = (VIRTUAL_W - 18.0f - 360.0f) + 360.0f * (float)k / 3.0f;
-            DrawRectangleRec({ x - 1, 36, 2, 20 }, ui::C_TEXT);
+            DrawRectangleRec({ x - 1, 38, 2, 20 }, ui::C_TEXT);
         }
     }
     if (_phaseBanner > 0.0f) {
@@ -1154,9 +1184,9 @@ void Combat::DrawOverlay(float t) const {
         bool blink = std::fmod(t, 1.0f) < 0.6f;
         DrawRectangleLinesEx({ 0, 0, (float)VIRTUAL_W, (float)VIRTUAL_H }, 3.0f, ColorAlpha(ui::C_WARNING, 0.7f));
         const char* msg = "|| PAUSE TACTIQUE - [ESPACE]";
-        float w = ui::MeasureLabel(msg, 20) + 32;
+        float w = ui::MeasureLabel(msg, 20) + 40;
         Rectangle r = { (VIRTUAL_W - w) / 2.0f, 150, w, 30 };
-        DrawRectangleRec(r, ColorAlpha(ui::C_WARNING, blink ? 1.0f : 0.8f));
+        ui::Bevel(r, 8, ColorAlpha(ui::C_WARNING, blink ? 1.0f : 0.8f));
         ui::LabelCentered(msg, VIRTUAL_W / 2.0f, r.y + 5, 20, ui::C_INK);
     } else if (Speed() > 1 && _slowmo <= 0.0f) {
         ui::LabelCentered(TextFormat(">> x%d", Speed()), VIRTUAL_W / 2.0f, 156, 20, ColorAlpha(ui::C_ACCENT, 0.7f));
@@ -1183,6 +1213,8 @@ void Combat::DrawOverlay(float t) const {
         int layers = _enemy.shieldLayers;
         if (fd && fd->missile)
             std::snprintf(odds, sizeof odds, "Toucher %d%% · traverse les boucliers", 100 - evasion);
+        else if (fd && layers > 0 && layers <= fd->pierce)
+            std::snprintf(odds, sizeof odds, "Toucher %d%% · perce %d bouclier(s)", 100 - evasion, layers);
         else if (fd && layers > 0)
             std::snprintf(odds, sizeof odds, "Toucher %d%% · %d bouclier(s) : %s", 100 - evasion, layers,
                           fd->shots > layers ? "salve suffisante" : "salve bloquée");
@@ -1215,11 +1247,14 @@ void Combat::DrawOverlay(float t) const {
                              hasAimed ? ui::Measure(aimed, 14) : 0.0f, ui::Measure(hint, 14) }) + 28;
         w = std::max(w, ui::MeasureLabel(SystemName(_hoverRoom), 20) + 28);
         float h = 92.0f + (hasAimed ? 18.0f : 0.0f);
+        w += 24;
         Rectangle r = { std::min(m.x + 26, (float)VIRTUAL_W - w - 8), std::min(m.y + 24, (float)VIRTUAL_H - h - 8), w, h };
-        DrawRectangleRec(r, ColorAlpha(ui::C_INK, 0.85f));
-        DrawRectangleLinesEx(r, 1.0f, ui::C_ENEMY);
-        DrawRectangleRec({ r.x, r.y, 3, r.height }, ui::C_ENEMY);
-        ui::Label(SystemName(_hoverRoom), r.x + 14, r.y + 10, 20, ui::C_TEXT);
+        ui::Bevel({ r.x + 3, r.y + 3, r.width, r.height }, 8, ColorAlpha(BLACK, 0.4f));
+        ui::Bevel(r, 8, ColorAlpha(ui::C_INK, 0.9f));
+        ui::BevelLines(r, 8, ui::C_ENEMY);
+        DrawRectangleRec({ r.x + 8, r.y, r.width - 8, 2 }, ui::C_ENEMY);
+        ui::DrawIcon(_hoverRoom, { r.x + 22, r.y + 20 }, 1.0f, ui::C_ENEMY);
+        ui::Label(SystemName(_hoverRoom), r.x + 38, r.y + 10, 20, ui::C_TEXT);
         float ly = r.y + 34;
         ui::Text(line, r.x + 14, ly, 15, ui::C_LABEL);  ly += 18;
         ui::Text(odds, r.x + 14, ly, 15, ui::C_LABEL);  ly += 18;

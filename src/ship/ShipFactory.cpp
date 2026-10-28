@@ -27,7 +27,7 @@ const PlayerShipDef PLAYER_SHIPS[PLAYER_SHIP_COUNT] = {
         "Disponible" },
       HULL_FRIGATE, 30, 8, { 2, 2, 3, 1, 0, 0, 0, 0 },
       { WPN_BURST_LASER_II, WPN_ARTEMIS, -1 }, -1, 16, 12, 30 },
-    { { "VIPERE", "Intercepteur furtif",
+    { { "VIPÈRE", "Intercepteur furtif",
         "Esquive élevée, invisibilité et puissance de feu laser. Moins de coque, pas de lance-missiles.",
         "Atteindre le secteur 3" },
       HULL_FIGHTER, 26, 11, { 2, 5, 3, 0, 1, 0, 0, 0 },

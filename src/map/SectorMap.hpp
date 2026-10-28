@@ -74,7 +74,8 @@ public:
     bool IsOpen() const         { return _open; }
     bool IsClosable() const     { return _closable; }
 
-    // Renvoie l'index de la balise choisie par le joueur, -1 sinon
+    // Renvoie l'index de la balise choisie par le joueur, -1 sinon.
+    // Clic : saut immédiat. Chiffre : sélection (détail affiché), puis même chiffre ou Entrée : saut.
     int  Update(float dt, int fuel);
     void Draw(int fuel, float t);
 
@@ -93,7 +94,7 @@ public:
 
     bool CloseRequested() const    { return _closeRequested; }
     bool DistressRequested() const { return _distressRequested; }
-    void ClearRequests()           { _closeRequested = _distressRequested = false; }
+    void ClearRequests()           { _closeRequested = _distressRequested = false; _jumpRequested = -1; }
 
     static const char* KindName(BeaconKind k);
 
@@ -103,6 +104,8 @@ private:
     int   _sector   = 0;
     int   _current  = 0;
     int   _hovered  = -1;
+    int   _selected = -1;   // destination choisie au clavier, en attente de confirmation
+    int   _jumpRequested = -1;   // bouton SAUTER du panneau de détail
     int   _sensors  = 0;
     float _fleet    = -1.5f;
     bool  _open     = false;
@@ -114,6 +117,7 @@ private:
     bool  _IsLinked(int a, int b) const;
     bool  _KindKnown(int idx) const;
     float _ColumnX(float column) const;
+    void  _DrawDetail(Rectangle r, int focus, int fuel);
     void  _Link(int a, int b);
     void  _ComputeDistances();
     // Voisins triés de haut en bas (tampon réutilisé : aucune allocation par frame)

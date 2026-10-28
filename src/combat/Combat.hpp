@@ -44,11 +44,9 @@ public:
     void DrawWorld(float t) const;
     void DrawOverlay(float t) const;
 
-    bool      Active() const        { return _active; }
     bool      Paused() const        { return _paused; }
     bool      Dying() const         { return _enemyDeathT >= 0.0f || _playerDeathT >= 0.0f; }
     bool      IsBoss() const        { return _kind == EnemyKind::BOSS; }
-    int       BossPhase() const     { return _bossPhase; }
     int*      SelectedWeapon()      { return &_selected; }
     int       Selected() const      { return _selected; }
     bool      CancelTargeting();
@@ -63,12 +61,10 @@ public:
     int       Speed() const         { return SPEEDS[_speedIdx]; }
     void      CycleSpeed()          { _speedIdx = (_speedIdx + 1) % 3; }
     float     TimeScale() const     { return _paused ? 0.0f : _timeScale; }
-    float     Elapsed() const       { return _elapsed; }
 
     static Rectangle SpeedButtonRect(int idx);
     static Rectangle AutoTargetRect();
     static Rectangle AbilityRect(int idx);   // 0 = invisibilité, 1 = piratage
-    bool      HackSelecting() const { return _hackSelecting; }
 
 private:
     static constexpr int SPEEDS[3] = { 1, 2, 4 };
@@ -164,6 +160,7 @@ private:
     void _EnemyAI(float dt);
     CombatResult _UpdateFlee(float dt);
     void _UpdateDeath(float& deathT, const Ship& ship, ShipView& view, float dt);
+    void _EmitDamageFx(const Ship& ship, const ShipView& view, float h);
     void _OnEnemyDestroyed();
     void _PlayWeaponSfx(int weaponId, bool fromPlayer);
     Vector2 _ShieldEdge(const Ship& target, const ShipView& view, Vector2 from, Vector2 to) const;

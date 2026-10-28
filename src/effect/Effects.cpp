@@ -50,6 +50,15 @@ void Effects::Debris(Vector2 pos, Color color, int count, float speed) {
     }
 }
 
+void Effects::Smoke(Vector2 pos, float size, float life) {
+    if (_smoke.size() >= MAX_SMOKE) return;
+    float ang = rng::Float(0.0f, 2.0f * PI);
+    float spd = rng::Float(8.0f, 24.0f);
+    float l   = life * rng::Float(0.7f, 1.2f);
+    _smoke.push_back({ pos, { std::cos(ang) * spd, std::sin(ang) * spd }, l, l,
+                       size * rng::Float(0.7f, 1.3f), 0.6f, { 96, 90, 84, 255 } });
+}
+
 void Effects::Flare(Vector2 pos, Color color, float size) {
     if (_particles.size() >= MAX_PARTICLES) return;
     _particles.push_back({ pos, { 0, 0 }, 0.09f, 0.09f, size, 0.0f, color });
@@ -98,15 +107,19 @@ void Effects::Flash(float amount, Color color) {
 // ─── Mise à jour ─────────────────────────────────────────────────────────────
 
 void Effects::Update(float dt, float drift) {
-    for (auto& p : _particles) {
-        p.pos.x += (p.vel.x - drift) * dt;
-        p.pos.y += p.vel.y * dt;
-        float d = std::max(0.0f, 1.0f - p.drag * dt);
-        p.vel.x *= d;
-        p.vel.y *= d;
-        p.life  -= dt;
-    }
-    std::erase_if(_particles, [](const Particle& p) { return p.life <= 0.0f; });
+    auto advance = [&](std::vector<Particle>& v) {
+        for (auto& p : v) {
+            p.pos.x += (p.vel.x - drift) * dt;
+            p.pos.y += p.vel.y * dt;
+            float d = std::max(0.0f, 1.0f - p.drag * dt);
+            p.vel.x *= d;
+            p.vel.y *= d;
+            p.life  -= dt;
+        }
+        std::erase_if(v, [](const Particle& p) { return p.life <= 0.0f; });
+    };
+    advance(_particles);
+    advance(_smoke);
 
     for (auto& c : _chunks) {
         c.pos.x += (c.vel.x - drift) * dt;
@@ -160,6 +173,15 @@ void Effects::Update(float dt, float drift) {
 // ─── Dessin ──────────────────────────────────────────────────────────────────
 
 void Effects::DrawWorld() const {
+    // Fumée d'abord, en mélange normal : elle passe derrière les étincelles
+    for (const auto& p : _smoke) {
+        float t  = p.life / p.maxLife;
+        float sz = std::max(2.0f, std::round(p.size * (1.6f - 0.8f * t) / 2.0f) * 2.0f);
+        float x  = std::round(p.pos.x / 2.0f) * 2.0f - sz * 0.5f;
+        float y  = std::round(p.pos.y / 2.0f) * 2.0f - sz * 0.5f;
+        DrawRectangleRec({ x, y, sz, sz }, ColorAlpha(p.color, 0.7f * std::min(1.0f, 2.0f * t)));
+    }
+
     for (const auto& r : _rings) {
         float grow = 1.0f + (1.0f - r.life) * r.growth;
         float a    = r.life * r.life;
@@ -206,6 +228,7 @@ void Effects::DrawFlash() const {
 
 void Effects::Clear() {
     _particles.clear();
+    _smoke.clear();
     _chunks.clear();
     _homing.clear();
     _texts.clear();

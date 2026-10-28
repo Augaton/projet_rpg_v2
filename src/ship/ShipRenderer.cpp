@@ -1,5 +1,6 @@
 #include "ShipRenderer.hpp"
 #include "../core/UI.hpp"
+#include "rlgl.h"
 #include <algorithm>
 #include <cmath>
 
@@ -181,53 +182,23 @@ void ShipRenderer::DrawShield(const Ship& ship, const ShipView& baseView, float 
         EndBlendMode();
     }
 
+    // Bulle elliptique : cercle étiré verticalement (voile plus dense au bord, liseré, balayage)
     Vector2 r = ShieldRadii(ship);
     float pulse = 0.5f + 0.5f * sinf(t * 2.0f);
-    for (int i = 0; i < ship.shieldLayers; i++) {
-        float off = (float)i * 5.0f;
-        DrawEllipseLines((int)view.pos.x, (int)view.pos.y, r.x + off, r.y + off,
-                         ColorAlpha(ui::C_SHIELD, 0.22f + 0.12f * pulse - 0.04f * (float)i));
-    }
-}
-
-void ShipRenderer::_DrawIcon(int sys, Vector2 c, Color col) {
-    switch (sys) {
-    case SYS_SHIELDS:
-        DrawRing(c, 5.0f, 7.5f, 180.0f, 360.0f, 12, col);
-        DrawRectangle((int)c.x - 1, (int)c.y - 2, 3, 8, col);
-        break;
-    case SYS_ENGINES:
-        DrawLineEx({ c.x - 6, c.y - 5 }, { c.x - 1, c.y }, 2.0f, col);
-        DrawLineEx({ c.x - 1, c.y },     { c.x - 6, c.y + 5 }, 2.0f, col);
-        DrawLineEx({ c.x + 1, c.y - 5 }, { c.x + 6, c.y }, 2.0f, col);
-        DrawLineEx({ c.x + 6, c.y },     { c.x + 1, c.y + 5 }, 2.0f, col);
-        break;
-    case SYS_WEAPONS:
-        DrawCircleLinesV(c, 5.5f, col);
-        DrawLineEx({ c.x - 8, c.y }, { c.x + 8, c.y }, 1.5f, col);
-        DrawLineEx({ c.x, c.y - 8 }, { c.x, c.y + 8 }, 1.5f, col);
-        break;
-    case SYS_REPAIR:
-        DrawRectangle((int)c.x - 6, (int)c.y - 2, 12, 4, col);
-        DrawRectangle((int)c.x - 2, (int)c.y - 6, 4, 12, col);
-        break;
-    case SYS_CLOAK:   // œil barré
-        DrawRectangleLinesEx({ c.x - 7, c.y - 4, 14, 8 }, 2.0f, col);
-        DrawRectangle((int)c.x - 2, (int)c.y - 2, 4, 4, col);
-        DrawLineEx({ c.x - 8, c.y + 7 }, { c.x + 8, c.y - 7 }, 2.0f, col);
-        break;
-    case SYS_HACKING: // chevrons de code
-        DrawLineEx({ c.x - 3, c.y - 6 }, { c.x - 8, c.y }, 2.0f, col);
-        DrawLineEx({ c.x - 8, c.y },     { c.x - 3, c.y + 6 }, 2.0f, col);
-        DrawLineEx({ c.x + 3, c.y - 6 }, { c.x + 8, c.y }, 2.0f, col);
-        DrawLineEx({ c.x + 8, c.y },     { c.x + 3, c.y + 6 }, 2.0f, col);
-        break;
-    case SYS_DEFENSE: // tourelle
-        DrawRectangle((int)c.x - 6, (int)c.y, 12, 6, col);
-        DrawLineEx({ c.x, c.y }, { c.x + 6, c.y - 7 }, 3.0f, col);
-        break;
-    default: break;
-    }
+    rlPushMatrix();
+    rlTranslatef(view.pos.x, view.pos.y, 0.0f);
+    rlScalef(1.0f, r.y / r.x, 1.0f);
+    BeginBlendMode(BLEND_ADDITIVE);
+        DrawCircleGradient(0, 0, r.x, ColorAlpha(ui::C_SHIELD, 0.0f), ColorAlpha(ui::C_SHIELD, 0.10f + 0.04f * layers));
+        for (int i = 0; i < ship.shieldLayers; i++) {
+            float rad = r.x + (float)i * 6.0f;
+            float a   = 0.38f + 0.18f * pulse - 0.08f * (float)i;
+            DrawRing({ 0, 0 }, rad - 1.5f, rad, 0.0f, 360.0f, 72, ColorAlpha(ui::C_SHIELD, a));
+            float sweep = t * (70.0f + 25.0f * i) + i * 120.0f;
+            DrawRing({ 0, 0 }, rad - 3.0f, rad + 1.0f, sweep, sweep + 50.0f, 16, ColorAlpha(WHITE, 0.25f));
+        }
+    EndBlendMode();
+    rlPopMatrix();
 }
 
 void ShipRenderer::DrawRooms(const Ship& ship, const ShipView& view, bool hostile,
@@ -252,10 +223,10 @@ void ShipRenderer::DrawRooms(const Ship& ship, const ShipView& view, bool hostil
         float grow   = hovered ? 3.0f : 0.0f;
         Rectangle rr = { r.x - grow, r.y - grow, r.width + grow * 2, r.height + grow * 2 };
 
-        DrawRectangleRec({ rr.x + 3, rr.y + 3, rr.width, rr.height }, ColorAlpha(BLACK, 0.6f));
-        DrawRectangleRec(rr, hovered ? state : ColorAlpha(ui::C_INK, 0.8f));
-        DrawRectangleLinesEx(rr, 2.0f, state);
-        _DrawIcon(s, c, hovered ? ui::C_INK : state);
+        ui::Bevel({ rr.x + 3, rr.y + 3, rr.width, rr.height }, 6, ColorAlpha(BLACK, 0.6f));
+        ui::Bevel(rr, 6, hovered ? state : ColorAlpha(ui::C_INK, 0.82f));
+        ui::BevelLines(rr, 6, state, 2.0f);
+        ui::DrawIcon(s, c, 1.0f, hovered ? ui::C_INK : state);
 
         // Salle piratée : parasites violets
         if (x.hackTimer > 0.0f) {

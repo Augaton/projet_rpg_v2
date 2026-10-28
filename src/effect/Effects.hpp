@@ -10,6 +10,8 @@ public:
                float size = 3.0f, float life = 0.6f);
     void Explosion(Vector2 pos, float scale = 1.0f);
     void Debris(Vector2 pos, Color color, int count, float speed);
+    // Fumée : volutes sombres en mélange normal (elles assombrissent), qui gonflent en se dissipant
+    void Smoke(Vector2 pos, float size, float life);
     void Flare(Vector2 pos, Color color, float size);          // éclair bref (tir, impact)
     void Shockwave(Vector2 pos, float radius, Color color);    // anneau qui s'étend
     void Ripple(Vector2 center, float rx, float ry, Color color);
@@ -59,12 +61,14 @@ private:
     };
 
     std::vector<Particle>     _particles;
+    std::vector<Particle>     _smoke;
     std::vector<Chunk>        _chunks;
     std::vector<Homing>       _homing;
     std::vector<FloatingText> _texts;
     std::vector<Ring>         _rings;
 
     static constexpr size_t MAX_PARTICLES = 1500;   // garde-fous mémoire / perf
+    static constexpr size_t MAX_SMOKE     = 300;
     static constexpr size_t MAX_CHUNKS    = 200;
     static constexpr size_t MAX_HOMING    = 120;
 

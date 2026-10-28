@@ -210,6 +210,24 @@ void Ship::DepowerWeapon(int slot) {
 }
 
 void Ship::RecomputePower() {
+    // Jamais plus d'énergie demandée que le réacteur n'en fournit : _Reserve le garantit en jeu,
+    // mais une sauvegarde modifiée peut arriver avec un excédent. On le retire en partant de la fin.
+    int excess = PowerReserved() - reactor;
+    for (int s = SYS_COUNT - 1; s >= 0 && excess > 0; s--) {
+        if (s == SYS_WEAPONS) {
+            for (int i = MAX_WEAPON_SLOTS - 1; i >= 0 && excess > 0; i--) {
+                WeaponSlot& w = weapons[i];
+                if (w.Empty() || !w.wanted) continue;
+                w.wanted = w.powered = false;
+                excess  -= GetWeaponDef(w.id).power;
+            }
+        } else {
+            int cut = std::min(sys[s].desired, excess);
+            sys[s].desired -= cut;
+            excess         -= cut;
+        }
+    }
+
     for (int s = 0; s < SYS_COUNT; s++) {
         if (s == SYS_WEAPONS) continue;
         ShipSystem& x = sys[s];

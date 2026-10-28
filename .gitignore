@@ -39,3 +39,4 @@ ftl_game
 build/
 userdata/
 bin/ftl_game_*
+bin/tests

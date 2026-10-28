@@ -2,16 +2,9 @@
 #include "../core/Config.hpp"
 #include <algorithm>
 
-SpaceBackground::SpaceBackground() : time(0.0f), ftlLerp(0.0f), impactAnim(0.0f) {}
-
 void SpaceBackground::Load(const char* shaderPath) {
-    shader = LoadShader(0, shaderPath);
-    timeLoc   = GetShaderLocation(shader, "iTime");
+    shader    = LoadShader(0, shaderPath);
     resLoc    = GetShaderLocation(shader, "iResolution");
-    ftlLoc    = GetShaderLocation(shader, "iFTL");
-    impactLoc = GetShaderLocation(shader, "iImpact");
-    
-    // Récupérer les nouvelles adresses dans le shader
     seedLoc   = GetShaderLocation(shader, "iSeed");
     col1Loc   = GetShaderLocation(shader, "iColorPrimary");
     col2Loc   = GetShaderLocation(shader, "iColorSecondary");
@@ -30,27 +23,23 @@ void SpaceBackground::SetSector(float seed, Color c1, Color c2) {
 }
 
 void SpaceBackground::Update(float dt, float ftlTarget, bool impacted) {
-    time += dt;
     ftlLerp += (ftlTarget - ftlLerp) * 3.0f * dt;
     if (impacted) impactAnim = 1.0f;
     impactAnim = std::max(0.0f, impactAnim - 4.0f * dt);
-
-    float res[2] = { (float)VIRTUAL_W, (float)VIRTUAL_H };
-    
-    SetShaderValue(shader, timeLoc,   &time,        SHADER_UNIFORM_FLOAT);
-    SetShaderValue(shader, resLoc,    res,          SHADER_UNIFORM_VEC2);
-    SetShaderValue(shader, ftlLoc,    &ftlLerp,     SHADER_UNIFORM_FLOAT);
-    SetShaderValue(shader, impactLoc, &impactAnim,  SHADER_UNIFORM_FLOAT);
-    SetShaderValue(shader, seedLoc, &currentSeed, SHADER_UNIFORM_FLOAT);
-    SetShaderValue(shader, col1Loc, &color1, SHADER_UNIFORM_VEC3);
-    SetShaderValue(shader, col2Loc, &color2, SHADER_UNIFORM_VEC3);
-    SetShaderValue(shader, levelsLoc, &_levels, SHADER_UNIFORM_FLOAT);
 }
+
 void SpaceBackground::Draw(int screenWidth, int screenHeight) {
+    float res[2] = { (float)VIRTUAL_W, (float)VIRTUAL_H };
+    SetShaderValue(shader, resLoc,    res,          SHADER_UNIFORM_VEC2);
+    SetShaderValue(shader, seedLoc,   &currentSeed, SHADER_UNIFORM_FLOAT);
+    SetShaderValue(shader, col1Loc,   &color1,      SHADER_UNIFORM_VEC3);
+    SetShaderValue(shader, col2Loc,   &color2,      SHADER_UNIFORM_VEC3);
+    SetShaderValue(shader, levelsLoc, &_levels,     SHADER_UNIFORM_FLOAT);
+
     BeginShaderMode(shader);
-        DrawTexturePro(whiteTex, 
-            { 0, 0, 1, 1 }, 
-            { 0, 0, (float)screenWidth, (float)screenHeight }, 
+        DrawTexturePro(whiteTex,
+            { 0, 0, 1, 1 },
+            { 0, 0, (float)screenWidth, (float)screenHeight },
             { 0, 0 }, 0.0f, WHITE);
     EndShaderMode();
 }
@@ -58,8 +47,4 @@ void SpaceBackground::Draw(int screenWidth, int screenHeight) {
 void SpaceBackground::Unload() {
     UnloadShader(shader);
     UnloadTexture(whiteTex);
-}
-
-SpaceBackground::~SpaceBackground() {
-    // La sécurité avant tout
 }

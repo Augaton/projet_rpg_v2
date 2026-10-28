@@ -7,6 +7,7 @@ in vec4 fragColor;
 uniform sampler2D texture0;
 uniform vec2 direction;   // (1,0) ou (0,1)
 uniform vec2 texelSize;   // 1 / taille de la cible
+uniform float gain;       // intensité appliquée en sortie de passe
 
 out vec4 finalColor;
 
@@ -21,5 +22,5 @@ void main()
     sum += texture(texture0, fragTexCoord + o2) * 0.0702702703;
     sum += texture(texture0, fragTexCoord - o2) * 0.0702702703;
 
-    finalColor = sum;
+    finalColor = sum * gain;
 }

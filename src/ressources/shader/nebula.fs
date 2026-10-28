@@ -1,18 +1,17 @@
 #version 330
 
+// Fond spatial procédural : nébuleuse, soleil hors champ et planète propres à chaque balise.
+// Rendu en basse résolution puis agrandi : le tramage ordonné donne le grain rétro.
+// Statique : calculé une seule fois par balise (le saut FTL et les impacts sont superposés à part).
 in vec2 fragTexCoord;
 out vec4 finalColor;
 
-uniform float iTime;
 uniform vec2  iResolution;
-uniform float iFTL;       // 0.0 à 1.0 (ton ftlLerp)
-uniform float iImpact;    // Flash blanc lors des dégâts
-uniform float iSeed;      // Graine du secteur
+uniform float iSeed;      // graine de la balise
 uniform vec3  iColorPrimary;
 uniform vec3  iColorSecondary;
-uniform float iLevels;    // > 0 : quantification + tramage ordonné (rendu rétro)
+uniform float iLevels;    // > 0 : quantification + tramage ordonné
 
-// Matrice de Bayer 4x4
 float bayer4(vec2 p) {
     int x = int(mod(p.x, 4.0));
     int y = int(mod(p.y, 4.0));
@@ -21,78 +20,100 @@ float bayer4(vec2 p) {
     return m[x + y * 4] / 16.0;
 }
 
-// --- UTILS PROCÉDURAUX ---
 float hash(vec2 p) {
     p = fract(p * vec2(123.34, 456.21));
     p += dot(p, p + 45.32);
     return fract(p.x * p.y);
 }
 
+float hash1(float n) { return fract(sin(n * 127.1) * 43758.5453); }
+
 float noise(vec2 p) {
-    vec2 i = floor(p); vec2 f = fract(p);
-    f = f*f*(3.0-2.0*f);
-    float a = hash(i);
-    float b = hash(i+vec2(1,0));
-    float c = hash(i+vec2(0,1));
-    float d = hash(i+vec2(1,1));
-    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+    vec2 i = floor(p), f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x),
+               mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
 }
 
 float fbm(vec2 p) {
-    float v = 0.0; float a = 0.5;
+    const mat2 rot = mat2(0.8, -0.6, 0.6, 0.8);
+    float v = 0.0, a = 0.5;
     for (int i = 0; i < 5; i++) {
         v += a * noise(p);
-        p *= 2.0; a *= 0.5;
+        p = rot * p * 2.03;
+        a *= 0.5;
     }
     return v;
 }
 
 void main() {
-    vec2 uv = fragTexCoord;
-    vec2 fragPos = uv * iResolution;
+    float aspect = iResolution.x / iResolution.y;
+    vec2 p = vec2(fragTexCoord.x * aspect, fragTexCoord.y);
 
-    // 1. FOND : NÉBULEUSE PROCÉDURALE
-    // On déplace le fond légèrement avec le temps pour donner de la vie
-    vec2 p = uv * vec2(iResolution.x/iResolution.y, 1.0);
-    p += iSeed; // Décale les formes selon le secteur
-    p.x -= iTime * 0.05; // Dérive lente
-    
-    float n = fbm(p * 2.0);
-    float cloud = pow(n, 3.0) * 1.5; // Contraste des gaz
-    vec3 nebula = mix(iColorPrimary, iColorSecondary, n) * cloud;
+    // Soleil hors champ : sa direction éclaire la planète
+    float sa = hash1(iSeed) * 6.2831853;
+    vec2 sunPos = vec2(aspect * 0.5, 0.5) + vec2(cos(sa) * aspect * 0.62, sin(sa) * 0.62);
+    vec3 sunCol = mix(vec3(1.0, 0.86, 0.62), iColorPrimary, 0.3);
 
-    // 2. LOGIQUE ÉTOILES FTL (TON ANCIEN CODE PRÉSERVÉ)
-    float nx = fragPos.x + iTime * 40.0;
-    float ny = fragPos.y + sin(iTime * 0.3) * 30.0;
-    
-    // Adaptation de ton bruit original
-    float n_noise = (sin(nx * 0.02 + iTime * 0.2) + 
-                     cos(ny * 0.02 - iTime * 0.15) + 
-                     sin((fragPos.x + fragPos.y) * 0.01 + iTime * 0.1)) * 0.5;
-                     
-    float starIntensity = pow((n_noise + 1.0) * 0.5, 2.0);
-    float gradX = uv.x;
+    // ── Nébuleuse : bruit fractal à domaine déformé, cœurs lumineux, poussière sombre
+    vec2 q = p * 1.5 + iSeed;
+    vec2 w = vec2(fbm(q + vec2(0.0, 1.7)), fbm(q + vec2(5.2, 1.3)));
+    float n = fbm(q + 1.7 * w);
+    float dust = fbm(q * 2.4 + w + 9.1);
 
-    float r = (0.6 + 0.4 * sin(starIntensity * 3.0 + iTime)) * gradX;
-    float g = (0.5 + 0.5 * sin(starIntensity * 2.0 + iTime * 0.7)) * (1.0 - gradX);
-    float b = (0.7 + 0.3 * sin(starIntensity * 4.0 - iTime * 0.5));
-    
-    vec4 starCol = vec4(r, g, b, 0.137);
+    float cloud = smoothstep(0.32, 0.92, n);
+    vec3 neb = mix(iColorSecondary, iColorPrimary, smoothstep(0.35, 0.85, w.x)) * cloud;
+    neb += mix(iColorPrimary, vec3(1.0), 0.25) * pow(cloud, 4.0) * 0.7;
+    neb *= 1.0 - smoothstep(0.45, 0.78, dust) * 0.8;
 
-    // 3. ASSEMBLAGE
-    // On ajoute un fond spatial très sombre derrière la nébuleuse
-    vec3 finalRGB = mix(vec3(0.005, 0.005, 0.01), nebula, 0.8);
-    
-    // On mélange avec tes étoiles FTL
-    finalRGB = finalRGB * (1.0 - starCol.a) + starCol.rgb * starCol.a;
+    vec3 col = vec3(0.006, 0.006, 0.016) + neb * 0.62;
 
-    // Effet d'impact (flash blanc)
-    finalRGB += vec3(iImpact * 0.3);
+    // Halo du soleil
+    float sd = length(p - sunPos);
+    col += sunCol * (0.30 * exp(-sd * 2.6) + 0.06 * exp(-sd * 0.8));
 
-    // Palette réduite tramée : chaque pixel basse résolution devient un "gros pixel"
-    if (iLevels > 0.0) {
-        finalRGB = floor(finalRGB * iLevels + bayer4(gl_FragCoord.xy)) / iLevels;
+    // ── Planète (absente d'une balise sur trois)
+    if (hash1(iSeed + 3.1) > 0.33) {
+        const vec2 anchors[4] = vec2[4](vec2(0.86, 0.86), vec2(0.10, 0.20), vec2(0.78, 0.08), vec2(0.20, 0.94));
+        vec2 pc = anchors[int(hash1(iSeed + 7.7) * 3.999)];
+        pc.x *= aspect;
+        float pr = mix(0.17, 0.33, hash1(iSeed + 2.3));
+        vec2 d = (p - pc) / pr;
+        float rr = length(d);
+        vec2 l2 = normalize(sunPos - pc);
+        vec3 atmCol = mix(vec3(0.5, 0.75, 1.0), iColorPrimary, 0.45);
+
+        if (rr < 1.0) {
+            vec3 N = vec3(d, sqrt(1.0 - rr * rr));
+            vec3 L = normalize(vec3(l2, 0.35));
+            float ndl = dot(N, L);
+            float light = smoothstep(-0.08, 0.35, ndl);
+
+            // Bandes de géante gazeuse ou relief rocheux selon la graine
+            float gas = step(0.5, hash1(iSeed + 4.4));
+            vec2 sp = N.xy / (N.z + 0.6) * 1.6 + iSeed * 3.0;
+            float surf = mix(fbm(sp * 2.2), fbm(vec2(sp.x * 0.6, sp.y * 7.0)), gas);
+            vec3 base = mix(iColorSecondary * 1.4 + 0.04, iColorPrimary * 0.9 + 0.06, hash1(iSeed + 5.0));
+            vec3 surfCol = base * (0.45 + 0.9 * surf);
+
+            float rim = pow(1.0 - N.z, 3.0);
+            vec3 planet = surfCol * light * 0.85 + atmCol * rim * (0.15 + 0.85 * light) * 0.9;
+            planet += surfCol * 0.02;   // face nocturne à peine visible
+            float edge = smoothstep(1.0, 0.97, rr);
+            col = mix(col, planet, edge);
+        } else {
+            // Atmosphère diffuse côté soleil
+            float side = 0.35 + 0.65 * max(0.0, dot(normalize(d), l2));
+            col += atmCol * exp(-(rr - 1.0) * 14.0) * side * 0.45;
+        }
     }
 
-    finalColor = vec4(finalRGB, 1.0);
+    // Quantification tramée en espace gamma : pas fins dans les ombres, pas de damier
+    if (iLevels > 0.0) {
+        vec3 g = sqrt(max(col, 0.0));
+        g = floor(g * iLevels + bayer4(gl_FragCoord.xy)) / iLevels;
+        col = g * g;
+    }
+
+    finalColor = vec4(col, 1.0);
 }

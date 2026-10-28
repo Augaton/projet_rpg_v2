@@ -40,6 +40,10 @@ public:
     void Shutdown();
 
 private:
+    static constexpr float       JUMP_DURATION = 2.2f;   // durée totale d'un saut FTL (s)
+    static constexpr float       JUMP_SWAP     = 1.1f;   // instant où la balise change
+    static constexpr const char* VERSION_TAG   = "v2.1";
+
     // ── Services ─────────────────────────────────────────────────────────────
     Settings          _settings;
     AudioManager      _audio;
@@ -65,7 +69,6 @@ private:
     bool      _quit      = false;
     float     _t         = 0.0f;
     float     _ftl       = 0.0f;
-    float     _bootT     = 0.0f;
 
     // Surcouches
     bool      _pause        = false;
@@ -96,6 +99,9 @@ private:
     // Sauvegarde
     bool        _hasSave = false;
     std::string _saveError;
+    // Résumé affiché au menu principal
+    struct SaveSummary { int hull = 0, maxHull = 0, scrap = 0, fuel = 0, sector = 0; };
+    SaveSummary _saveInfo;
 
     // Saut
     float _jumpT          = 0.0f;

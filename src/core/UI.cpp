@@ -11,13 +11,26 @@ namespace ui {
 
 static Font s_mono;
 static bool s_monoLoaded = false;
+// Titres : deux atlas (petites tailles nettes, grandes tailles sans flou)
+static Font s_title, s_titleL;
+static bool s_titleLoaded = false;
+static Texture2D s_icons{};
+static Texture2D s_logo{};
 
 // ═════════════════════════════════════════════════════════════════════════════
-// Polices
+// Ressources
 // ═════════════════════════════════════════════════════════════════════════════
 
-void LoadFont() {
-    // ASCII + Latin-1 pour les accents français, plus œ Œ ’ — …
+static Texture2D LoadPixelTexture(const char* path) {
+    Texture2D t{};
+    if (FileExists(path)) t = LoadTexture(path);
+    if (t.id > 0) SetTextureFilter(t, TEXTURE_FILTER_POINT);
+    else          TraceLog(LOG_WARNING, "UI: %s introuvable", path);
+    return t;
+}
+
+// ASCII + Latin-1 pour les accents français, plus œ Œ ’ — …
+static bool LoadTextFont(const char* path, int size, Font& out) {
     int codepoints[229];
     for (int i = 0; i < 224; i++) codepoints[i] = 32 + i;
     codepoints[224] = 0x153;
@@ -26,24 +39,66 @@ void LoadFont() {
     codepoints[227] = 0x2014;
     codepoints[228] = 0x2026;
 
-    const char* path = "asset/fonts/SourceCodePro-Semibold.otf";
-    if (FileExists(path)) {
-        Font f = LoadFontEx(path, 40, codepoints, 229);
-        if (IsFontValid(f) && f.texture.id > 0) {
-            s_mono = f;
-            s_monoLoaded = true;
-            GenTextureMipmaps(&s_mono.texture);
-            SetTextureFilter(s_mono.texture, TEXTURE_FILTER_TRILINEAR);
-            return;
-        }
-    }
-    TraceLog(LOG_WARNING, "UI: police terminal introuvable, repli sur la police pixel");
-    s_mono = GetFontDefault();
+    if (!FileExists(path)) return false;
+    Font f = LoadFontEx(path, size, codepoints, 229);
+    if (!IsFontValid(f) || f.texture.id == 0) return false;
+    GenTextureMipmaps(&f.texture);
+    SetTextureFilter(f.texture, TEXTURE_FILTER_TRILINEAR);
+    out = f;
+    return true;
 }
 
-void UnloadFont() {
+void Load() {
+    s_monoLoaded = LoadTextFont("asset/fonts/SourceCodePro-Semibold.otf", 40, s_mono);
+    if (!s_monoLoaded) {
+        TraceLog(LOG_WARNING, "UI: police terminal introuvable, repli sur la police pixel");
+        s_mono = GetFontDefault();
+    }
+
+    const char* title = "asset/fonts/ChakraPetch-SemiBold.ttf";
+    s_titleLoaded = LoadTextFont(title, 32, s_title);
+    if (s_titleLoaded && !LoadTextFont(title, 72, s_titleL)) {
+        ::UnloadFont(s_title);
+        s_titleLoaded = false;
+    }
+    if (!s_titleLoaded) TraceLog(LOG_WARNING, "UI: police des titres introuvable, repli sur la police pixel");
+
+    s_icons = LoadPixelTexture("asset/ui/icons.png");
+    s_logo  = LoadPixelTexture("asset/ui/logo.png");
+}
+
+void Unload() {
     if (s_monoLoaded) ::UnloadFont(s_mono);
     s_monoLoaded = false;
+    if (s_titleLoaded) {
+        ::UnloadFont(s_title);
+        ::UnloadFont(s_titleL);
+    }
+    s_titleLoaded = false;
+    for (Texture2D* t : { &s_icons, &s_logo }) {
+        if (t->id > 0) UnloadTexture(*t);
+        *t = Texture2D{};
+    }
+}
+
+// ─── Icônes & logo ───────────────────────────────────────────────────────────
+
+void DrawIcon(int icon, Vector2 c, float scale, Color tint) {
+    if (s_icons.id == 0 || icon < 0 || icon >= ICON_COUNT) return;
+    float s = ICON_SIZE * scale;
+    DrawTexturePro(s_icons, { icon * ICON_SIZE, 0, ICON_SIZE, ICON_SIZE },
+                   { std::round(c.x - s * 0.5f), std::round(c.y - s * 0.5f), s, s }, { 0, 0 }, 0.0f, tint);
+}
+
+Vector2 DrawLogo(float x, float y, float scale, Color tint) {
+    if (s_logo.id == 0) {
+        Label("AUGATON", x, y, 100, tint);
+        return { MeasureLabel("AUGATON", 100), 100 };
+    }
+    Vector2 size = { s_logo.width * scale, s_logo.height * scale };
+    DrawTexturePro(s_logo, { 0, 0, (float)s_logo.width, (float)s_logo.height },
+                   { std::round(x), std::round(y), size.x, size.y }, { 0, 0 }, 0.0f, tint);
+    return size;
 }
 
 // ─── Texte courant ───────────────────────────────────────────────────────────
@@ -172,14 +227,29 @@ static const char* PixelSafe(const char* text) {
     return buf.c_str();
 }
 
+// Chakra Petch dessinée à 1,27 × la taille demandée : même hauteur de capitales que la police
+// pixel (0,7 × taille), donc mêmes encombrements ; remontée pour garder le centrage vertical.
+static constexpr float TITLE_SCALE   = 1.27f;
+static constexpr float TITLE_RISE    = 0.15f;
+static constexpr float TITLE_SPACING = 0.04f;   // en fraction de la taille dessinée
+
+static const Font& TitleFont(float px) { return px > 30.0f ? s_titleL : s_title; }
+
 float MeasureLabel(const char* text, float size) {
     float s = SnapPixel(size);
-    return MeasureTextEx(GetFontDefault(), PixelSafe(text), s, s / 10.0f).x;
+    if (!s_titleLoaded) return MeasureTextEx(GetFontDefault(), PixelSafe(text), s, s / 10.0f).x;
+    float px = s * TITLE_SCALE;
+    return MeasureTextEx(TitleFont(px), text, px, px * TITLE_SPACING).x;
 }
 
 void Label(const char* text, float x, float y, float size, Color color) {
     float s = SnapPixel(size);
-    DrawTextEx(GetFontDefault(), PixelSafe(text), { std::round(x), std::round(y) }, s, s / 10.0f, color);
+    if (!s_titleLoaded) {
+        DrawTextEx(GetFontDefault(), PixelSafe(text), { std::round(x), std::round(y) }, s, s / 10.0f, color);
+        return;
+    }
+    float px = s * TITLE_SCALE;
+    DrawTextEx(TitleFont(px), text, { std::round(x), std::round(y - s * TITLE_RISE) }, px, px * TITLE_SPACING, color);
 }
 
 void LabelCentered(const char* text, float cx, float y, float size, Color color) {
@@ -211,19 +281,69 @@ void CornerBrackets(Rectangle r, float s, Color c) {
     DrawRectangleRec({ x1 - s + th, y1, s, th }, c); DrawRectangleRec({ x1, y1 - s + th, th, s }, c);
 }
 
-void Panel(Rectangle r, Color accent, float accentAlpha, Color bg, const char* title) {
-    DrawRectangleRec({ r.x + 4, r.y + 4, r.width, r.height }, ColorAlpha(BLACK, 0.3f));
-    DrawRectangleRec(r, ColorAlpha(bg, std::min(bg.a / 255.0f, 0.88f)));
-    DrawRectangleLinesEx(r, 1.0f, LerpColor(ColorAlpha(C_BORDER, 0.8f), accent, 0.35f + accentAlpha));
+// Découpage sans recouvrement (l'alpha ne se cumule pas) : 3 bandes + 2 triangles
+void Bevel(Rectangle r, float cut, Color fill) {
+    cut = std::floor(std::clamp(cut, 0.0f, std::min(r.width, r.height) * 0.5f));
+    float x = r.x, y = r.y, w = r.width, h = r.height;
+    DrawRectangleRec({ x, y + cut, w, h - 2 * cut }, fill);
+    DrawRectangleRec({ x + cut, y, w - cut, cut }, fill);
+    DrawRectangleRec({ x, y + h - cut, w - cut, cut }, fill);
+    if (cut <= 0.0f) return;
+    DrawTriangle({ x + cut, y }, { x, y + cut }, { x + cut, y + cut }, fill);
+    DrawTriangle({ x + w - cut, y + h - cut }, { x + w - cut, y + h }, { x + w, y + h - cut }, fill);
+}
 
-    // Filet d'accent en haut
-    DrawRectangleRec({ r.x, r.y, r.width, 2 }, ColorAlpha(accent, 0.8f));
-
-    if (title) {
-        float w = MeasureLabel(title, 10) + 14;
-        DrawRectangleRec({ r.x + 14, r.y - 6, w, 13 }, accent);
-        Label(title, r.x + 21, r.y - 4, 10, C_INK);
+// Diagonales en escalier de pixels : nettes sans anticrénelage
+void BevelLines(Rectangle r, float cut, Color c, float t) {
+    cut = std::floor(std::clamp(cut, 0.0f, std::min(r.width, r.height) * 0.5f));
+    float x = std::round(r.x), y = std::round(r.y), w = std::round(r.width), h = std::round(r.height);
+    DrawRectangleRec({ x + cut, y, w - cut, t }, c);
+    DrawRectangleRec({ x + w - t, y + t, t, h - cut - t }, c);
+    DrawRectangleRec({ x, y + h - t, w - cut, t }, c);
+    DrawRectangleRec({ x, y + cut, t, h - cut - t }, c);
+    for (float i = 0; i < cut; i++) {
+        DrawRectangleRec({ x + cut - 1 - i, y + i, t, t }, c);
+        DrawRectangleRec({ x + w - t - i, y + h - cut - t + 1 + i, t, t }, c);
     }
+}
+
+void SegBar(Rectangle r, float fill, int segments, Color on, Color off) {
+    segments = std::max(1, segments);
+    float segW = r.width / (float)segments;
+    int lit = (int)(std::clamp(fill, 0.0f, 1.0f) * (float)segments + 0.001f);
+    for (int k = 0; k < segments; k++) {
+        Rectangle s = { std::floor(r.x + k * segW), r.y, std::max(1.0f, std::floor(segW) - 1.0f), r.height };
+        if (k < lit) {
+            DrawRectangleRec(s, on);
+            DrawRectangleRec({ s.x, s.y, s.width, 1 }, ColorAlpha(WHITE, 0.35f));
+        } else {
+            DrawRectangleRec(s, off);
+        }
+    }
+}
+
+// Titre logé dans le filet d'accent : une encoche sombre interrompt le filet
+static void TitleNotch(float x, float y, const char* title, Color color) {
+    float w = MeasureLabel(title, 10) + 14;
+    DrawRectangleRec({ x, y - 7, w, 14 }, C_PANEL_BG);
+    Label(title, x + 7, y - 5, 10, color);
+}
+
+void Panel(Rectangle r, Color accent, float accentAlpha, Color bg, const char* title) {
+    const float cut = 14.0f;
+    Bevel({ r.x + 6, r.y + 6, r.width, r.height }, cut, ColorAlpha(BLACK, 0.45f));
+    Bevel(r, cut, ColorAlpha(bg, std::min(bg.a / 255.0f, 0.95f)));
+    BevelLines(r, cut, ColorAlpha(LerpColor(C_BORDER, accent, 0.1f + 0.3f * accentAlpha), 0.7f));
+    DrawRectangleRec({ r.x + cut, r.y, r.width - cut, 2 }, accent);
+    if (title) TitleNotch(r.x + cut + 10, r.y + 1, title, accent);
+}
+
+void Console(Rectangle r, Color accent, const char* tab, Color tabColor) {
+    const float cut = 10.0f;
+    Bevel({ r.x + 3, r.y + 3, r.width, r.height }, cut, ColorAlpha(BLACK, 0.35f));
+    Bevel(r, cut, ColorAlpha(C_PANEL_BG, 0.9f));
+    DrawRectangleRec({ r.x + cut, r.y, r.width - cut, 2 }, accent);
+    if (tab) TitleNotch(r.x + cut + 8, r.y + 1, tab, tabColor);
 }
 
 void Hazard(Rectangle r, Color color, float offset) {
@@ -334,29 +454,24 @@ bool DrawButton(Rectangle r, const char* label, bool enabled, Color accent, floa
     NavState st = Register(r, enabled);
 
     float off = st.down ? 2.0f : 0.0f;
+    float cut = std::min(10.0f, std::floor(r.height * 0.28f));
     if (enabled && !st.down)
-        DrawRectangleRec({ r.x + 3, r.y + 3, r.width, r.height }, ColorAlpha(BLACK, 0.35f));
+        Bevel({ r.x + 3, r.y + 3, r.width, r.height }, cut, ColorAlpha(BLACK, 0.4f));
 
-    Rectangle b  = { r.x + off, r.y + off, r.width, r.height };
-    Color bg     = st.focused ? accent : ColorAlpha(C_INK, 0.55f);
-    Color fg     = !enabled ? C_TEXT_DIM : st.focused ? C_INK : C_TEXT;
-    Color border = !enabled ? ColorAlpha(C_BORDER, 0.6f) : st.focused ? accent : ColorAlpha(accent, 0.6f);
-
-    DrawRectangleRec(b, bg);
-    DrawRectangleLinesEx(b, st.focused ? 2.0f : 1.0f, border);
+    // Plat : bouton actif rempli de sa couleur, les autres juste soulignés d'un fin contour teinté
+    Rectangle b = { r.x + off, r.y + off, r.width, r.height };
+    Color fg    = !enabled ? C_TEXT_DIM : st.focused ? C_INK : C_TEXT;
+    if (st.focused) {
+        Bevel(b, cut, accent);
+    } else {
+        Bevel(b, cut, ColorAlpha(C_PANEL_2, enabled ? 0.95f : 0.6f));
+        BevelLines(b, cut, ColorAlpha(enabled ? accent : C_BORDER, enabled ? 0.35f : 0.5f));
+    }
 
     if (mono) {
-        float ty = b.y + (b.height - size) * 0.5f;
-        if (st.focused) Text(">", b.x + 10, ty, size, fg);
-        Text(label, b.x + 30, ty, size, fg);
+        Text(label, b.x + 20, b.y + (b.height - size) * 0.5f, size, fg);
     } else {
-        float ty = b.y + (b.height - SnapPixel(size)) * 0.5f;
-        if (st.focused) {
-            std::string l = std::string("> ") + label + " <";
-            LabelCentered(l.c_str(), b.x + b.width * 0.5f, ty, size, fg);
-        } else {
-            LabelCentered(label, b.x + b.width * 0.5f, ty, size, fg);
-        }
+        LabelCentered(label, b.x + b.width * 0.5f, b.y + (b.height - SnapPixel(size)) * 0.5f, size, fg);
     }
 
     bool clicked = enabled && ((st.hover && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) ||
@@ -378,9 +493,9 @@ bool ButtonText(Rectangle r, const char* label, bool enabled, Color accent, floa
 int Stepper(Rectangle r, const char* label, const char* value, Color accent) {
     NavState st = Register(r, true);
 
-    DrawRectangleRec(r, st.focused ? ColorAlpha(accent, 0.15f) : ColorAlpha(C_INK, 0.4f));
-    DrawRectangleLinesEx(r, 1.0f, st.focused ? accent : ColorAlpha(C_BORDER, 0.7f));
-    if (st.focused) DrawRectangleRec({ r.x, r.y, 6, r.height }, accent);
+    const float cut = 8.0f;
+    Bevel(r, cut, ColorAlpha(C_PANEL_2, 0.95f));
+    if (st.focused) BevelLines(r, cut, accent, 2.0f);
 
     float ty = r.y + (r.height - 20.0f) * 0.5f;
     Label(label, r.x + 20, ty, 20, st.focused ? C_TEXT : C_LABEL);
